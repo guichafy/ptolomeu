@@ -29,6 +29,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Native compiled artifacts
+src/bun/native/*.dylib
+
 # Bun
 bun.lockb
 

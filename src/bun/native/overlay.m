@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#include <signal.h>
 
 // Delegate that hides the window instead of closing it
 @interface OverlayWindowDelegate : NSObject <NSWindowDelegate>
@@ -32,11 +33,14 @@
 static OverlayWindowDelegate *overlayDelegate = nil;
 
 void makeWindowOverlay(void *nsWindowPtr) {
+    if (!nsWindowPtr) return;
     NSWindow *window = (__bridge NSWindow *)nsWindowPtr;
     dispatch_async(dispatch_get_main_queue(), ^{
-        // Install our delegate to intercept close
-        if (!overlayDelegate) {
-            overlayDelegate = [[OverlayWindowDelegate alloc] init];
+        // Install or re-install delegate to intercept close
+        if (window.delegate != overlayDelegate) {
+            if (!overlayDelegate) {
+                overlayDelegate = [[OverlayWindowDelegate alloc] init];
+            }
             overlayDelegate.originalDelegate = window.delegate;
             window.delegate = overlayDelegate;
         }
@@ -50,22 +54,9 @@ void makeWindowOverlay(void *nsWindowPtr) {
     });
 }
 
-void hideWindowOverlay(void *nsWindowPtr) {
-    NSWindow *window = (__bridge NSWindow *)nsWindowPtr;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [window orderOut:nil];
-    });
-}
 
-void removeWindowOverlay(void *nsWindowPtr) {
-    NSWindow *window = (__bridge NSWindow *)nsWindowPtr;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        // Restore original delegate
-        if (overlayDelegate && overlayDelegate.originalDelegate) {
-            window.delegate = overlayDelegate.originalDelegate;
-        }
-        overlayDelegate = nil;
-        [window setCollectionBehavior:NSWindowCollectionBehaviorDefault];
-        [window setLevel:NSNormalWindowLevel];
-    });
+void quitApp(void) {
+    // Kill the entire process group (app + watcher + parent scripts)
+    kill(0, SIGTERM);
+    _exit(0);
 }
