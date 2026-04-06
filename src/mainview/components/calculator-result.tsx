@@ -2,10 +2,9 @@ interface CalculatorResultProps {
   expression: string
   result: string | null
   error: string | null
-  onCopy: () => void
 }
 
-export function CalculatorResult({ expression, result, error, onCopy }: CalculatorResultProps) {
+export function CalculatorResult({ expression, result, error }: CalculatorResultProps) {
   if (!expression.trim()) {
     return (
       <div className="flex-1 flex items-center justify-center">

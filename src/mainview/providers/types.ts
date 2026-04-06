@@ -1,5 +1,6 @@
-import type { ReactNode } from "react"
-import type { LucideIcon } from "lucide-react"
+import type { ReactNode, ComponentType, SVGProps } from "react"
+
+export type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { className?: string }>
 
 export interface SearchResult {
   id: string
@@ -13,7 +14,7 @@ export interface SearchResult {
 export interface SearchProvider {
   id: string
   label: string
-  icon: LucideIcon
+  icon: IconComponent
   placeholder: string
   search: (query: string, signal?: AbortSignal) => Promise<SearchResult[]>
 }
