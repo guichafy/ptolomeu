@@ -37,3 +37,7 @@ bun.lockb
 
 # Vite
 vite.config.ts.timestamp-*
+
+# Superpowers
+.superpowers/
+docs/superpowers/
