@@ -32,31 +32,52 @@ export function setMainWindow(win: {
 
 let cachedApps: { name: string; path: string }[] | null = null;
 
+async function scanDirectory(
+	dir: string,
+): Promise<{ name: string; path: string }[]> {
+	const results: { name: string; path: string }[] = [];
+	try {
+		const entries = await readdir(dir, { withFileTypes: true });
+		for (const entry of entries) {
+			const fullPath = join(dir, entry.name);
+			if (entry.name.endsWith(".app")) {
+				results.push({
+					name: entry.name.replace(/\.app$/, ""),
+					path: fullPath,
+				});
+			} else if (entry.isDirectory()) {
+				const subResults = await scanDirectory(fullPath);
+				results.push(...subResults);
+			}
+		}
+	} catch {
+		// Directory may not exist or be unreadable
+	}
+	return results;
+}
+
 async function scanApps(): Promise<{ name: string; path: string }[]> {
 	if (cachedApps) return cachedApps;
 
-	const dirs = ["/Applications", join(homedir(), "Applications")];
-	const apps: { name: string; path: string }[] = [];
+	const dirs = [
+		"/Applications",
+		"/System/Applications",
+		join(homedir(), "Applications"),
+	];
 
-	for (const dir of dirs) {
-		try {
-			const entries = await readdir(dir);
-			for (const entry of entries) {
-				if (entry.endsWith(".app")) {
-					apps.push({
-						name: entry.replace(/\.app$/, ""),
-						path: join(dir, entry),
-					});
-				}
-			}
-		} catch {
-			// Directory may not exist
-		}
-	}
+	const results = await Promise.all(dirs.map(scanDirectory));
+	const apps = results.flat();
 
-	apps.sort((a, b) => a.name.localeCompare(b.name));
-	cachedApps = apps;
-	return apps;
+	const seen = new Set<string>();
+	const unique = apps.filter((app) => {
+		if (seen.has(app.path)) return false;
+		seen.add(app.path);
+		return true;
+	});
+
+	unique.sort((a, b) => a.name.localeCompare(b.name));
+	cachedApps = unique;
+	return unique;
 }
 
 const iconCache = new Map<string, string | null>();
