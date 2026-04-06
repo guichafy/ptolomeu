@@ -52,7 +52,7 @@ Utils.setDockIconVisible(false);
 const url = await getMainViewUrl();
 
 const mainWindow = new BrowserWindow({
-	title: "React + Tailwind + Vite",
+	title: "Ptolomeu",
 	url,
 	hidden: true,
 	frame: {
@@ -64,7 +64,7 @@ const mainWindow = new BrowserWindow({
 });
 
 // Create system tray
-const tray = new Tray({ title: "MyApp", template: true });
+const tray = new Tray({ title: "Ptolomeu", template: true });
 
 tray.setMenu([
 	{ type: "normal", label: "Abrir", action: "open-window" },
