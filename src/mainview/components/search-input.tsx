@@ -5,14 +5,12 @@ interface SearchInputProps {
   placeholder: string
   value: string
   onChange: (value: string) => void
-  onSubmit: () => void
 }
 
 export function SearchInput({
   placeholder,
   value,
   onChange,
-  onSubmit,
 }: SearchInputProps) {
   return (
     <div className="relative flex-1">
@@ -23,7 +21,6 @@ export function SearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onSubmit()
           if (e.metaKey && e.key === "a") {
             e.currentTarget.select()
           }

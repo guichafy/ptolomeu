@@ -88,7 +88,9 @@ function PaletteContent() {
     }
     if (e.key === "ArrowDown") {
       e.preventDefault()
-      setSelectedIndex((i) => Math.min(i + 1, results.length - 1))
+      if (results.length > 0) {
+        setSelectedIndex((i) => Math.min(i + 1, results.length - 1))
+      }
       return
     }
     if (e.key === "ArrowUp") {
@@ -117,7 +119,6 @@ function PaletteContent() {
           placeholder={activeProvider.placeholder}
           value={query}
           onChange={setQuery}
-          onSubmit={handleSearch}
         />
       </div>
 
@@ -125,7 +126,7 @@ function PaletteContent() {
         <CalculatorResult
           expression={query}
           result={calcResult?.title ?? null}
-          error={calcResult?.title === "Expressão inválida" ? calcResult.subtitle ?? null : error}
+          error={calcResult?.id === "calc-error" ? calcResult.subtitle ?? null : error}
         />
       ) : hasContent ? (
         isLoading ? (
