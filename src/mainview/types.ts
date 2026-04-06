@@ -1,1 +1,1 @@
-export type { SearchProvider, SearchResult } from "./providers/types"
+export type { SearchProvider, SearchResult } from "./providers/types";

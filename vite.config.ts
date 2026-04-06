@@ -1,6 +1,7 @@
-import path from "path";
-import { defineConfig } from "vite";
+/// <reference types="vitest" />
+import path from "node:path";
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
 export default defineConfig(({ mode }) => ({
 	plugins: [react()],
@@ -19,5 +20,11 @@ export default defineConfig(({ mode }) => ({
 	server: {
 		port: 5173,
 		strictPort: true,
+	},
+	test: {
+		globals: true,
+		environment: "node",
+		root: ".",
+		include: ["src/**/*.test.ts"],
 	},
 }));

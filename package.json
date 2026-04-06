@@ -4,12 +4,16 @@
 	"description": "Electrobun app with React, Tailwind CSS, and Vite HMR",
 	"scripts": {
 		"build:native": "clang -dynamiclib -framework AppKit -framework Carbon -fobjc-arc -o src/bun/native/liboverlay.dylib src/bun/native/overlay.m -arch arm64",
+		"build:vite": "vite build",
 		"start": "bun run build:native && vite build && electrobun dev",
 		"dev": "bun run build:native && vite build --mode development && electrobun dev --watch",
 		"devtools": "react-devtools",
 		"dev:hmr": "concurrently \"bun run hmr\" \"bun run start\"",
 		"hmr": "vite --port 5173",
-		"build:canary": "bun run build:native && vite build && electrobun build --env=canary"
+		"build:canary": "bun run build:native && vite build && electrobun build --env=canary",
+		"lint": "bunx biome check .",
+		"lint:fix": "bunx biome check --write .",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@radix-ui/react-dialog": "^1.1.15",
@@ -26,6 +30,7 @@
 		"tailwind-merge": "^3.5.0"
 	},
 	"devDependencies": {
+		"@biomejs/biome": "^2.4.10",
 		"@types/bun": "latest",
 		"@types/react": "^18.3.12",
 		"@types/react-dom": "^18.3.1",
@@ -38,6 +43,7 @@
 		"tailwindcss": "^3.4.16",
 		"tailwindcss-animate": "^1.0.7",
 		"typescript": "^5.7.2",
-		"vite": "^6.0.3"
+		"vite": "^6.0.3",
+		"vitest": "^4.1.2"
 	}
 }
