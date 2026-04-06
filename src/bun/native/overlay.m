@@ -15,9 +15,16 @@
     return NO;
 }
 
+- (void)windowDidResignKey:(NSNotification *)notification {
+    NSWindow *window = notification.object;
+    [window orderOut:nil];
+    [NSApp hide:nil];
+}
+
 // Forward any other delegate methods to the original delegate
 - (BOOL)respondsToSelector:(SEL)aSelector {
     if (aSelector == @selector(windowShouldClose:)) return YES;
+    if (aSelector == @selector(windowDidResignKey:)) return YES;
     if (self.originalDelegate && [self.originalDelegate respondsToSelector:aSelector]) return YES;
     return [super respondsToSelector:aSelector];
 }
