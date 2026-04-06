@@ -1,6 +1,7 @@
 import { BrowserWindow, Tray, Utils, Updater } from "electrobun/bun";
 import { dlopen, FFIType } from "bun:ffi";
 import { join } from "path";
+import { rpc } from "./rpc";
 
 // Load native helper for window overlay on fullscreen
 // import.meta.dir points to Resources/app/bun/ in the bundle
@@ -65,6 +66,7 @@ const mainWindow = new BrowserWindow({
 		x: 200,
 		y: 200,
 	},
+	rpc,
 });
 
 // Create system tray
