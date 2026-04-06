@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <Carbon/Carbon.h>
 #include <signal.h>
 
 // Delegate that hides the window instead of closing it
@@ -31,6 +32,27 @@
 @end
 
 static OverlayWindowDelegate *overlayDelegate = nil;
+static NSWindow *registeredWindow = nil;
+static EventHotKeyRef hotKeyRef = NULL;
+
+// Forward declaration
+void makeWindowOverlay(void *nsWindowPtr);
+
+static OSStatus hotkeyHandler(EventHandlerCallRef nextHandler, EventRef event, void *userData) {
+    (void)nextHandler;
+    (void)event;
+    (void)userData;
+    if (registeredWindow) {
+        if ([registeredWindow isVisible]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [registeredWindow orderOut:nil];
+            });
+        } else {
+            makeWindowOverlay((__bridge void *)registeredWindow);
+        }
+    }
+    return noErr;
+}
 
 void makeWindowOverlay(void *nsWindowPtr) {
     if (!nsWindowPtr) return;
@@ -67,6 +89,30 @@ void makeWindowOverlay(void *nsWindowPtr) {
     });
 }
 
+
+void registerHotkey(void *nsWindowPtr) {
+    if (!nsWindowPtr) return;
+    registeredWindow = (__bridge NSWindow *)nsWindowPtr;
+
+    if (hotKeyRef) {
+        UnregisterEventHotKey(hotKeyRef);
+        hotKeyRef = NULL;
+    }
+
+    EventTypeSpec eventType = { kEventClassKeyboard, kEventHotKeyPressed };
+    InstallApplicationEventHandler(&hotkeyHandler, 1, &eventType, NULL, NULL);
+
+    // Command+Shift+Space: kVK_Space=49, cmdKey+shiftKey
+    EventHotKeyID hotKeyID = { 'PTol', 1 };
+    UInt32 modifiers = cmdKey | shiftKey;
+    OSStatus status = RegisterEventHotKey(49, modifiers, hotKeyID,
+                                          GetApplicationEventTarget(), 0, &hotKeyRef);
+    if (status == noErr) {
+        NSLog(@"[Hotkey] Command+Shift+Space registered successfully");
+    } else {
+        NSLog(@"[Hotkey] Failed to register hotkey: %d", (int)status);
+    }
+}
 
 void quitApp(void) {
     // Kill the entire process group (app + watcher + parent scripts)

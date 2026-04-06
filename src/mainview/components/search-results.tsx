@@ -1,4 +1,5 @@
 import { BookMarked, Star } from "lucide-react"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import type { Repository } from "../types"
 
 const LANGUAGE_COLORS: Record<string, string> = {
@@ -97,21 +98,15 @@ export function SearchResults({
   isLoading,
   error,
 }: SearchResultsProps) {
-  if (results === null && !isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Digite para buscar</p>
-      </div>
-    )
-  }
-
   if (isLoading) {
     return (
-      <div className="flex-1 overflow-y-auto p-2">
-        {SKELETON_ITEMS.map((i) => (
-          <ResultSkeleton key={i} />
-        ))}
-      </div>
+      <ScrollArea className="flex-1">
+        <div className="p-2">
+          {SKELETON_ITEMS.map((i) => (
+            <ResultSkeleton key={i} />
+          ))}
+        </div>
+      </ScrollArea>
     )
   }
 
@@ -134,10 +129,12 @@ export function SearchResults({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-2">
-      {results!.map((repo) => (
-        <ResultCard key={repo.id} repo={repo} />
-      ))}
-    </div>
+    <ScrollArea className="flex-1">
+      <div className="p-2">
+        {results!.map((repo) => (
+          <ResultCard key={repo.id} repo={repo} />
+        ))}
+      </div>
+    </ScrollArea>
   )
 }

@@ -15,6 +15,7 @@ export default {
 			"dist/index.html": "views/mainview/index.html",
 			"dist/assets": "views/mainview/assets",
 			"src/bun/native/liboverlay.dylib": "native/liboverlay.dylib",
+			"icone.png": "views/icone.png",
 		},
 		// Ignore Vite output in watch mode — HMR handles view rebuilds separately
 		watchIgnore: ["dist/**"],

@@ -1,6 +1,5 @@
 import { useRef, useState } from "react"
-import { SearchTypeCombobox } from "./components/search-type-combobox"
-import { SearchInput } from "./components/search-input"
+import { HeaderSearch } from "./components/header-search"
 import { SearchResults } from "./components/search-results"
 import { SEARCH_TYPES } from "./constants"
 import type { Repository } from "./types"
@@ -14,6 +13,7 @@ function App() {
   const abortRef = useRef<AbortController | null>(null)
 
   const selectedType = SEARCH_TYPES.find((t) => t.value === searchType)
+  const hasContent = results !== null || isLoading || error !== null
 
   async function handleSearch() {
     const trimmed = query.trim()
@@ -56,25 +56,21 @@ function App() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <div className="border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <SearchTypeCombobox
-            value={searchType}
-            onValueChange={setSearchType}
-          />
-          <SearchInput
-            placeholder={selectedType?.placeholder ?? "Buscar..."}
-            value={query}
-            onChange={setQuery}
-            onSubmit={handleSearch}
-          />
-        </div>
-      </div>
-      <SearchResults
-        results={results}
-        isLoading={isLoading}
-        error={error}
+      <HeaderSearch
+        searchType={searchType}
+        onSearchTypeChange={setSearchType}
+        query={query}
+        onQueryChange={setQuery}
+        onSubmit={handleSearch}
+        placeholder={selectedType?.placeholder ?? "Buscar..."}
       />
+      {hasContent && (
+        <SearchResults
+          results={results}
+          isLoading={isLoading}
+          error={error}
+        />
+      )}
     </div>
   )
 }

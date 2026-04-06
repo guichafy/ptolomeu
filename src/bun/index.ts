@@ -11,6 +11,10 @@ const overlaySymbols = {
 		args: [FFIType.ptr],
 		returns: FFIType.void,
 	},
+	registerHotkey: {
+		args: [FFIType.ptr],
+		returns: FFIType.void,
+	},
 	quitApp: {
 		args: [],
 		returns: FFIType.void,
@@ -64,7 +68,12 @@ const mainWindow = new BrowserWindow({
 });
 
 // Create system tray
-const tray = new Tray({ title: "Ptolomeu", template: true });
+const tray = new Tray({
+	title: "Ptolomeu",
+	template: false,
+	width: 48,
+	height: 48
+});
 
 tray.setMenu([
 	{ type: "normal", label: "Abrir", action: "open-window" },
@@ -82,5 +91,8 @@ tray.on("tray-clicked", (event: any) => {
 		overlayLib.symbols.quitApp();
 	}
 });
+
+// Register global hotkey (Command+Shift+Space) via Carbon API in native code
+overlayLib.symbols.registerHotkey(mainWindow.ptr);
 
 console.log("System tray app started!");
