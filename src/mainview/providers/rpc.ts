@@ -5,6 +5,7 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
     requests: {
       listApps: { params: void; response: { name: string; path: string }[] };
       openApp: { params: { path: string }; response: boolean };
+      getAppIcon: { params: { path: string }; response: { icon: string | null } };
     };
     messages: {};
   };
