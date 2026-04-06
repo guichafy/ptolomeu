@@ -14,6 +14,12 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
   };
 }
 
-export const rpc = Electroview.defineRPC<PtolomeuRPCSchema>({
+const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
   handlers: {},
 })
+
+// Instantiate Electroview to establish the WebSocket transport
+// This connects the RPC to the main process via encrypted WebSocket
+new Electroview({ rpc: rpcInstance })
+
+export const rpc = rpcInstance
