@@ -56,8 +56,8 @@ const mainWindow = new BrowserWindow({
 	url,
 	hidden: true,
 	frame: {
-		width: 900,
-		height: 700,
+		width: 630,
+		height: 260,
 		x: 200,
 		y: 200,
 	},

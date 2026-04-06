@@ -45,10 +45,23 @@ void makeWindowOverlay(void *nsWindowPtr) {
             window.delegate = overlayDelegate;
         }
 
+        [window setOpaque:NO];
+        [window setBackgroundColor:[[NSColor blackColor] colorWithAlphaComponent:0.85]];
         [window setCollectionBehavior:
             NSWindowCollectionBehaviorMoveToActiveSpace |
             NSWindowCollectionBehaviorFullScreenAuxiliary];
         [window setLevel:NSStatusWindowLevel];
+
+        // Center window on the current screen
+        NSScreen *screen = [NSScreen mainScreen];
+        if (screen) {
+            NSRect screenFrame = [screen visibleFrame];
+            NSRect windowFrame = [window frame];
+            CGFloat x = NSMidX(screenFrame) - windowFrame.size.width / 2;
+            CGFloat y = NSMidY(screenFrame) - windowFrame.size.height / 2;
+            [window setFrameOrigin:NSMakePoint(x, y)];
+        }
+
         [window orderFrontRegardless];
         [NSApp activateIgnoringOtherApps:YES];
     });

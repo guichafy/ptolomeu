@@ -5,7 +5,7 @@
 	"scripts": {
 		"build:native": "clang -dynamiclib -framework AppKit -fobjc-arc -o src/bun/native/liboverlay.dylib src/bun/native/overlay.m -arch arm64",
 		"start": "bun run build:native && vite build && electrobun dev",
-		"dev": "bun run build:native && electrobun dev --watch",
+		"dev": "bun run build:native && vite build && electrobun dev --watch",
 		"dev:hmr": "concurrently \"bun run hmr\" \"bun run start\"",
 		"hmr": "vite --port 5173",
 		"build:canary": "bun run build:native && vite build && electrobun build --env=canary"
