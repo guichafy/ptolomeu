@@ -3,10 +3,24 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { defineElectrobunRPC, type ElectrobunRPCSchema } from "electrobun/bun";
 import {
+	type GitHubItem,
+	type GitHubSubType,
+	githubFetchSearch,
+} from "./github/github-fetch";
+import { invalidate as invalidateTeamRepos } from "./github/team-repos-cache";
+import {
+	deleteToken as deleteGithubToken,
+	getStatus as getGithubTokenStatus,
+	setToken as setGithubToken,
+	type TokenStatus,
+} from "./github-token";
+import {
 	loadSettings as loadSettingsFromDisk,
 	type Settings,
 	saveSettings as saveSettingsToDisk,
 } from "./settings";
+
+export type SettingsSection = "plugins" | "general" | "github";
 
 export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 	bun: {
@@ -20,13 +34,27 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			resizeWindow: { params: { height: number }; response: boolean };
 			loadSettings: { params: void; response: Settings };
 			saveSettings: { params: Settings; response: boolean };
+			githubGetTokenStatus: { params: void; response: TokenStatus };
+			githubSetToken: {
+				params: { token: string };
+				response: { ok: boolean; login?: string; error?: string };
+			};
+			githubDeleteToken: { params: void; response: boolean };
+			githubFetchSearch: {
+				params: { subType: GitHubSubType; query: string };
+				response: GitHubItem[];
+			};
+			githubInvalidateTeamCache: {
+				params: { org: string; team: string };
+				response: boolean;
+			};
 		};
 		messages: {};
 	};
 	webview: {
 		requests: {};
 		messages: {
-			openPreferences: void;
+			openPreferences: { section?: SettingsSection };
 		};
 	};
 }
@@ -189,6 +217,36 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 			},
 			saveSettings: async (next) => {
 				return saveSettingsToDisk(next);
+			},
+			githubGetTokenStatus: async () => {
+				return getGithubTokenStatus();
+			},
+			githubSetToken: async ({ token }) => {
+				const result = await setGithubToken(token);
+				if (result.ok) {
+					const current = await loadSettingsFromDisk();
+					await saveSettingsToDisk({
+						...current,
+						github: { ...current.github, hasToken: true },
+					});
+				}
+				return result;
+			},
+			githubDeleteToken: async () => {
+				await deleteGithubToken();
+				const current = await loadSettingsFromDisk();
+				await saveSettingsToDisk({
+					...current,
+					github: { ...current.github, hasToken: false },
+				});
+				return true;
+			},
+			githubFetchSearch: async ({ subType, query }) => {
+				return githubFetchSearch({ subType, query });
+			},
+			githubInvalidateTeamCache: async ({ org, team }) => {
+				invalidateTeamRepos(org, team);
+				return true;
 			},
 		},
 	},

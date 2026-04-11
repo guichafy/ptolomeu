@@ -101,7 +101,7 @@ tray.on("tray-clicked", (event: any) => {
 		overlayLib.symbols.makeWindowOverlay(mainWindow.ptr);
 	} else if (action === "open-preferences") {
 		overlayLib.symbols.makeWindowOverlay(mainWindow.ptr);
-		rpc.send.openPreferences();
+		rpc.send.openPreferences({});
 	} else if (action === "quit") {
 		tray.remove();
 		overlayLib.symbols.quitApp();
