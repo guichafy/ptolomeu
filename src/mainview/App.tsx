@@ -4,6 +4,10 @@ import { CalculatorResult } from "./components/calculator-result";
 import { ModeBar } from "./components/mode-bar";
 import { ResultItem } from "./components/result-item";
 import { SearchInput } from "./components/search-input";
+import {
+	SearchTypeCombobox,
+	type SearchTypeComboboxHandle,
+} from "./components/search-type-combobox";
 import { GitHubProvider, useGitHub } from "./providers/github-context";
 import {
 	ProviderContextProvider,
@@ -20,7 +24,8 @@ const SETTINGS_HEIGHT = 480;
 
 function PaletteContent() {
 	const { activeProvider, cycleNext, cyclePrev } = useProvider();
-	const { activeSubType } = useGitHub();
+	const { activeSubType, setSubType, customFilters } = useGitHub();
+	const comboboxRef = useRef<SearchTypeComboboxHandle>(null);
 	const providerContext =
 		activeProvider.id === "github" ? activeSubType : undefined;
 	const { isOpen: isSettingsOpen } = useSettings();
@@ -85,6 +90,16 @@ function PaletteContent() {
 		}
 	}, [activeProvider.id, handleSearch]);
 
+	const prevSubTypeRef = useRef(activeSubType);
+	useEffect(() => {
+		if (activeProvider.id !== "github") return;
+		const prev = prevSubTypeRef.current;
+		prevSubTypeRef.current = activeSubType;
+		if (prev === activeSubType) return;
+		if (!query.trim()) return;
+		handleSearch();
+	}, [activeProvider.id, activeSubType, handleSearch, query]);
+
 	const hasContent =
 		query.trim().length > 0 &&
 		(results.length > 0 || isLoading || error !== null);
@@ -100,6 +115,29 @@ function PaletteContent() {
 	}, [hasContent, isSettingsOpen]);
 
 	function handleKeyDown(e: React.KeyboardEvent) {
+		if (activeProvider.id === "github" && e.metaKey) {
+			if (e.key === "f" || e.key === "F") {
+				e.preventDefault();
+				comboboxRef.current?.open();
+				return;
+			}
+			const digit = e.key;
+			if (digit >= "0" && digit <= "9") {
+				const num = Number(digit);
+				if (num >= 1 && num <= 4) {
+					e.preventDefault();
+					const type = (["repos", "code", "issues", "users"] as const)[num - 1];
+					setSubType({ kind: "native", type });
+					return;
+				}
+				const customIdx = num === 0 ? 5 : num - 5;
+				if (customIdx >= 0 && customFilters[customIdx]) {
+					e.preventDefault();
+					setSubType({ kind: "custom", filter: customFilters[customIdx] });
+					return;
+				}
+			}
+		}
 		if (e.key === "Escape") {
 			setQuery("");
 			setResults([]);
@@ -150,6 +188,11 @@ function PaletteContent() {
 					placeholder={activeProvider.placeholder}
 					value={query}
 					onChange={setQuery}
+					leftSlot={
+						activeProvider.id === "github" ? (
+							<SearchTypeCombobox ref={comboboxRef} />
+						) : undefined
+					}
 				/>
 			</div>
 
