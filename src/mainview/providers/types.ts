@@ -13,15 +13,15 @@ export interface SearchResult {
 	onSelect: () => void;
 }
 
-export interface SearchProvider<TContext = void> {
+export interface SearchProvider {
 	id: string;
 	label: string;
 	icon: IconComponent;
 	placeholder: string;
-	useSearchContext?: () => TContext;
+	useSearchContext?: () => unknown;
 	search: (
 		query: string,
 		signal?: AbortSignal,
-		context?: TContext,
+		context?: unknown,
 	) => Promise<SearchResult[]>;
 }
