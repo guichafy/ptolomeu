@@ -1,7 +1,7 @@
 {
 	"name": "ptolomeu",
 	"version": "0.0.1",
-	"description": "Electrobun app with React, Tailwind CSS, and Vite HMR",
+	"description": "macOS menu bar app for searching GitHub repositories, built with Electrobun, React, and Tailwind CSS",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/guichafy/ptolomeu.git"
