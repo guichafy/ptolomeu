@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build-release-asset:
+    name: Build & Upload macOS asset
+    runs-on: macos-latest
+    needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build stable bundle
+        run: bun run build:release
+
+      - name: Package .app as zip
+        id: package
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.release-please.outputs.version }}"
+          APP_PATH="build/stable-macos-arm64/ptolomeu.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Expected bundle at $APP_PATH not found" >&2
+            ls -la build/ || true
+            exit 1
+          fi
+          ASSET_PATH="ptolomeu-${VERSION}-macos-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ASSET_PATH"
+          echo "asset_path=$ASSET_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload asset to GitHub Release
+        run: |
+          gh release upload \
+            "${{ needs.release-please.outputs.tag_name }}" \
+            "${{ steps.package.outputs.asset_path }}" \
+            --clobber

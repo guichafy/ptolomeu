@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "include-component-in-tag": false,
+  "bootstrap-sha": "6a96abf0b357623974fa014262f280be12e99014",
+  "packages": {
+    ".": {
+      "package-name": "ptolomeu",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "electrobun.config.ts"
+        }
+      ]
+    }
+  }
+}
