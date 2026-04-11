@@ -60,6 +60,14 @@ const mainWindow = new BrowserWindow({
 	title: "Ptolomeu",
 	url,
 	hidden: true,
+	titleBarStyle: "hidden",
+	styleMask: {
+		Borderless: true,
+		Titled: false,
+		Closable: false,
+		Miniaturizable: false,
+		Resizable: false,
+	},
 	frame: {
 		width: 630,
 		height: 120,
