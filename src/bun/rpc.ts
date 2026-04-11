@@ -2,6 +2,11 @@ import { readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { defineElectrobunRPC, type ElectrobunRPCSchema } from "electrobun/bun";
+import {
+	loadSettings as loadSettingsFromDisk,
+	type Settings,
+	saveSettings as saveSettingsToDisk,
+} from "./settings";
 
 export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 	bun: {
@@ -13,12 +18,16 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				response: { icon: string | null };
 			};
 			resizeWindow: { params: { height: number }; response: boolean };
+			loadSettings: { params: void; response: Settings };
+			saveSettings: { params: Settings; response: boolean };
 		};
 		messages: {};
 	};
 	webview: {
 		requests: {};
-		messages: {};
+		messages: {
+			openPreferences: void;
+		};
 	};
 }
 
@@ -150,7 +159,7 @@ async function getAppIconBase64(appPath: string): Promise<string | null> {
 	}
 }
 
-export const rpc = defineElectrobunRPC<PtolomeuRPCSchema>("bun", {
+export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 	handlers: {
 		requests: {
 			listApps: async () => {
@@ -174,6 +183,12 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema>("bun", {
 					return true;
 				}
 				return false;
+			},
+			loadSettings: async () => {
+				return loadSettingsFromDisk();
+			},
+			saveSettings: async (next) => {
+				return saveSettingsToDisk(next);
 			},
 		},
 	},
