@@ -8,18 +8,6 @@ import {
 
 const originalFetch = globalThis.fetch;
 
-function _makeRepo(name: string, description: string | null = null): TeamRepo {
-	return {
-		id: name.charCodeAt(0),
-		name,
-		fullName: `Chafy-Studio/${name}`,
-		description,
-		stars: 1,
-		language: null,
-		url: `https://github.com/Chafy-Studio/${name}`,
-	};
-}
-
 beforeEach(() => {
 	_resetCache();
 	vi.useFakeTimers();
@@ -142,7 +130,7 @@ describe("team-repos-cache", () => {
 				),
 		) as unknown as typeof fetch;
 		const results = await getFiltered("o", "t", "bar", "tok");
-		expect(results.map((r) => r.name).sort()).toEqual([
+		expect(results.map((r: TeamRepo) => r.name).sort()).toEqual([
 			"bar-service",
 			"ptolomeu",
 		]);
