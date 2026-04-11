@@ -72,7 +72,7 @@ describe("github-token", () => {
 		globalThis.fetch = vi.fn(
 			async () =>
 				new Response(JSON.stringify({ login: "guichafy" }), { status: 200 }),
-		) as typeof fetch;
+		) as unknown as typeof fetch;
 		const result = await githubToken.setToken("ghp_new");
 		expect(result).toEqual({ ok: true, login: "guichafy" });
 		expect(
@@ -85,7 +85,7 @@ describe("github-token", () => {
 		const calls = mockSpawn([]);
 		globalThis.fetch = vi.fn(
 			async () => new Response("", { status: 401 }),
-		) as typeof fetch;
+		) as unknown as typeof fetch;
 		const result = await githubToken.setToken("bad");
 		expect(result.ok).toBe(false);
 		expect(result.error).toBeDefined();
@@ -120,7 +120,7 @@ describe("github-token", () => {
 		globalThis.fetch = vi.fn(
 			async () =>
 				new Response(JSON.stringify({ login: "guichafy" }), { status: 200 }),
-		) as typeof fetch;
+		) as unknown as typeof fetch;
 		const status = await githubToken.getStatus();
 		expect(status).toEqual({
 			hasToken: true,
