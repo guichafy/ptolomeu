@@ -1,6 +1,5 @@
-/// <reference types="vitest" />
-import { defineConfig } from "vite";
 import path from "node:path";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
 	resolve: {
