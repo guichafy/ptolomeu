@@ -1,6 +1,6 @@
 {
 	"name": "ptolomeu",
-	"version": "0.0.1",
+	"version": "1.1.0",
 	"description": "Electrobun app with React, Tailwind CSS, and Vite HMR",
 	"scripts": {
 		"build:native": "clang -dynamiclib -framework AppKit -framework Carbon -fobjc-arc -o src/bun/native/liboverlay.dylib src/bun/native/overlay.m -arch arm64",
