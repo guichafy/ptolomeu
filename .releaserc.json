@@ -1,0 +1,37 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "bun run scripts/sync-versions.ts ${nextRelease.version} && bun run build:release && ditto -c -k --sequesterRsrc --keepParent build/stable-macos-arm64/ptolomeu.app ptolomeu-${nextRelease.version}-macos-arm64.zip"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["package.json", "electrobun.config.ts", "CHANGELOG.md"],
+        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "ptolomeu-*-macos-arm64.zip",
+            "label": "macOS (arm64)"
+          }
+        ]
+      }
+    ]
+  ]
+}
