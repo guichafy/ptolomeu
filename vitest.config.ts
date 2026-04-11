@@ -12,5 +12,6 @@ export default defineConfig({
 		environment: "node",
 		include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
 		exclude: ["test/e2e/**", "node_modules/**"],
+		setupFiles: ["src/bun/vitest.setup.ts"],
 	},
 });
