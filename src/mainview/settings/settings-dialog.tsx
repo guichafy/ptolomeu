@@ -1,4 +1,4 @@
-import { Github, Settings2, SlidersHorizontal } from "lucide-react";
+import { GitBranch, Settings2, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,7 @@ type Section = SettingsSection;
 
 const NAV_ITEMS: { id: Section; label: string; icon: typeof Settings2 }[] = [
 	{ id: "plugins", label: "Plugins", icon: SlidersHorizontal },
-	{ id: "github", label: "GitHub", icon: Github },
+	{ id: "github", label: "GitHub", icon: GitBranch },
 	{ id: "general", label: "Geral", icon: Settings2 },
 ];
 
