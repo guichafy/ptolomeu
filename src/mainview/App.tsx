@@ -4,29 +4,22 @@ import { CalculatorResult } from "./components/calculator-result";
 import { ModeBar } from "./components/mode-bar";
 import { ResultItem } from "./components/result-item";
 import { SearchInput } from "./components/search-input";
-import { appsProvider } from "./providers/apps-provider";
-import { calculatorProvider } from "./providers/calculator-provider";
-import { githubProvider } from "./providers/github-provider";
 import {
 	ProviderContextProvider,
 	useProvider,
 } from "./providers/provider-context";
 import { rpc } from "./providers/rpc";
 import type { SearchResult } from "./providers/types";
-import { webSearchProvider } from "./providers/web-search-provider";
+import { SettingsProvider, useSettings } from "./settings/settings-context";
+import { SettingsDialog } from "./settings/settings-dialog";
 
 const COLLAPSED_HEIGHT = 120;
 const EXPANDED_HEIGHT = 440;
-
-const providers = [
-	appsProvider,
-	githubProvider,
-	calculatorProvider,
-	webSearchProvider,
-];
+const SETTINGS_HEIGHT = 480;
 
 function PaletteContent() {
 	const { activeProvider, cycleNext, cyclePrev } = useProvider();
+	const { isOpen: isSettingsOpen } = useSettings();
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState<SearchResult[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
@@ -88,12 +81,15 @@ function PaletteContent() {
 		query.trim().length > 0 &&
 		(results.length > 0 || isLoading || error !== null);
 
-	// Resize native window when content appears/disappears
+	// Resize native window when content appears/disappears or settings dialog toggles
 	useEffect(() => {
-		rpc.request
-			.resizeWindow({ height: hasContent ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT })
-			.catch(() => {});
-	}, [hasContent]);
+		const height = isSettingsOpen
+			? SETTINGS_HEIGHT
+			: hasContent
+				? EXPANDED_HEIGHT
+				: COLLAPSED_HEIGHT;
+		rpc.request.resizeWindow({ height }).catch(() => {});
+	}, [hasContent, isSettingsOpen]);
 
 	function handleKeyDown(e: React.KeyboardEvent) {
 		if (e.key === "Escape") {
@@ -211,9 +207,12 @@ function PaletteContent() {
 
 function App() {
 	return (
-		<ProviderContextProvider providers={providers}>
-			<PaletteContent />
-		</ProviderContextProvider>
+		<SettingsProvider>
+			<ProviderContextProvider>
+				<PaletteContent />
+				<SettingsDialog />
+			</ProviderContextProvider>
+		</SettingsProvider>
 	);
 }
 
