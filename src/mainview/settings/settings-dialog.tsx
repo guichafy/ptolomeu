@@ -1,21 +1,30 @@
-import { Settings2, SlidersHorizontal } from "lucide-react";
-import { useState } from "react";
+import { Github, Settings2, SlidersHorizontal } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import type { SettingsSection } from "../providers/rpc";
 import { GeneralSection } from "./general-section";
+import { GitHubSection } from "./github-section";
 import { PluginsSection } from "./plugins-section";
 import { useSettings } from "./settings-context";
 
-type Section = "plugins" | "general";
+type Section = SettingsSection;
 
 const NAV_ITEMS: { id: Section; label: string; icon: typeof Settings2 }[] = [
 	{ id: "plugins", label: "Plugins", icon: SlidersHorizontal },
+	{ id: "github", label: "GitHub", icon: Github },
 	{ id: "general", label: "Geral", icon: Settings2 },
 ];
 
 export function SettingsDialog() {
-	const { isOpen, closeDialog } = useSettings();
+	const { isOpen, closeDialog, initialSection } = useSettings();
 	const [section, setSection] = useState<Section>("plugins");
+
+	useEffect(() => {
+		if (isOpen && initialSection) {
+			setSection(initialSection);
+		}
+	}, [isOpen, initialSection]);
 
 	return (
 		<Dialog
@@ -53,7 +62,13 @@ export function SettingsDialog() {
 						})}
 					</aside>
 					<main className="flex-1 overflow-y-auto p-5">
-						{section === "plugins" ? <PluginsSection /> : <GeneralSection />}
+						{section === "plugins" ? (
+							<PluginsSection />
+						) : section === "github" ? (
+							<GitHubSection />
+						) : (
+							<GeneralSection />
+						)}
 					</main>
 				</div>
 			</DialogContent>
