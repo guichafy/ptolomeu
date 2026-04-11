@@ -4,6 +4,7 @@ import { CalculatorResult } from "./components/calculator-result";
 import { ModeBar } from "./components/mode-bar";
 import { ResultItem } from "./components/result-item";
 import { SearchInput } from "./components/search-input";
+import { GitHubProvider, useGitHub } from "./providers/github-context";
 import {
 	ProviderContextProvider,
 	useProvider,
@@ -19,6 +20,9 @@ const SETTINGS_HEIGHT = 480;
 
 function PaletteContent() {
 	const { activeProvider, cycleNext, cyclePrev } = useProvider();
+	const { activeSubType } = useGitHub();
+	const providerContext =
+		activeProvider.id === "github" ? activeSubType : undefined;
 	const { isOpen: isSettingsOpen } = useSettings();
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState<SearchResult[]>([]);
@@ -49,7 +53,11 @@ function PaletteContent() {
 		setSelectedIndex(0);
 
 		try {
-			const items = await activeProvider.search(query, controller.signal);
+			const items = await activeProvider.search(
+				query,
+				controller.signal,
+				providerContext,
+			);
 			if (!controller.signal.aborted) {
 				setResults(items);
 			}
@@ -64,7 +72,7 @@ function PaletteContent() {
 				setIsLoading(false);
 			}
 		}
-	}, [activeProvider, query]);
+	}, [activeProvider, query, providerContext]);
 
 	// Auto-search for calculator (real-time) and apps (on any change)
 	useEffect(() => {
@@ -209,8 +217,10 @@ function App() {
 	return (
 		<SettingsProvider>
 			<ProviderContextProvider>
-				<PaletteContent />
-				<SettingsDialog />
+				<GitHubProvider>
+					<PaletteContent />
+					<SettingsDialog />
+				</GitHubProvider>
 			</ProviderContextProvider>
 		</SettingsProvider>
 	);
