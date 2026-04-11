@@ -53,31 +53,6 @@ async function getMainViewUrl(): Promise<string> {
 // Hide dock icon — app runs as a menu bar agent
 Utils.setDockIconVisible(false);
 
-// Show splash screen for 2 seconds
-const splashHtmlPath = join(import.meta.dir, "..", "views", "splash.html");
-const splashWindow = new BrowserWindow({
-	title: "Ptolomeu",
-	url: `file://${splashHtmlPath}`,
-	titleBarStyle: "hidden",
-	styleMask: {
-		Borderless: true,
-		Titled: false,
-		Closable: false,
-		Miniaturizable: false,
-		Resizable: false,
-	},
-	frame: {
-		width: 720,
-		height: 393,
-		x: 360,
-		y: 250,
-	},
-});
-
-setTimeout(() => {
-	splashWindow.close();
-}, 2000);
-
 // Create the main application window (hidden)
 const url = await getMainViewUrl();
 
