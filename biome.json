@@ -3,7 +3,9 @@
 	"files": {
 		"includes": [
 			"src/**",
+			"test/**",
 			"vite.config.ts",
+			"vitest.config.e2e.ts",
 			"biome.json",
 			"tsconfig.json",
 			"package.json"

@@ -13,7 +13,10 @@
 		"build:canary": "bun run build:native && vite build && electrobun build --env=canary",
 		"lint": "bunx biome check .",
 		"lint:fix": "bunx biome check --write .",
-		"test": "vitest run"
+		"test": "vitest run",
+		"test:e2e": "vitest run --config vitest.config.e2e.ts",
+		"screenshots": "bun run build:native && bun run build:vite && vitest run --config vitest.config.e2e.ts",
+		"appium:install-driver": "appium driver install mac2"
 	},
 	"dependencies": {
 		"@radix-ui/react-dialog": "^1.1.15",
@@ -35,6 +38,8 @@
 		"@types/react": "^18.3.12",
 		"@types/react-dom": "^18.3.1",
 		"@vitejs/plugin-react": "^4.3.4",
+		"appium": "^3.2.2",
+		"appium-mac2-driver": "^3.2.16",
 		"autoprefixer": "^10.4.20",
 		"concurrently": "^9.1.0",
 		"postcss": "^8.4.49",
@@ -44,6 +49,7 @@
 		"tailwindcss-animate": "^1.0.7",
 		"typescript": "^5.7.2",
 		"vite": "^6.0.3",
-		"vitest": "^4.1.2"
+		"vitest": "^4.1.2",
+		"webdriverio": "^9.27.0"
 	}
 }

@@ -17,7 +17,12 @@ bun run build:native       # Compile Objective-C → liboverlay.dylib (arm64 onl
 bun run build:canary       # Production build with canary environment
 ```
 
-No test runner or linter is configured.
+```bash
+bun run test               # Unit tests (Vitest)
+bun run test:e2e           # E2E tests — Appium Mac2 (requires Xcode + mac2 driver)
+bun run screenshots        # Build + E2E screenshots to docs/screenshots/
+bun run lint               # Biome linting
+```
 
 ## Architecture
 
