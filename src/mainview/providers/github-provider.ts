@@ -1,6 +1,8 @@
-import { BookMarked } from "lucide-react";
 import { createElement } from "react";
-import type { SearchProvider, SearchResult } from "./types";
+import { githubSearch } from "./github/api";
+import type { GitHubSubType } from "./github/types";
+import { useGitHub } from "./github-context";
+import type { SearchProvider } from "./types";
 
 function GithubIcon(props: React.SVGProps<SVGSVGElement>) {
 	return createElement(
@@ -12,55 +14,16 @@ function GithubIcon(props: React.SVGProps<SVGSVGElement>) {
 	);
 }
 
-function formatStars(count: number): string {
-	if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
-	return String(count);
-}
+const DEFAULT_SUBTYPE: GitHubSubType = { kind: "native", type: "repos" };
 
-interface GitHubRepo {
-	id: number;
-	full_name: string;
-	description: string | null;
-	stargazers_count: number;
-	language: string | null;
-	html_url: string;
-}
-
-export const githubProvider: SearchProvider = {
+export const githubProvider: SearchProvider<GitHubSubType> = {
 	id: "github",
 	label: "GitHub",
 	icon: GithubIcon,
-	placeholder: "Buscar repositórios...",
-	search: async (
-		query: string,
-		signal?: AbortSignal,
-	): Promise<SearchResult[]> => {
+	placeholder: "Buscar no GitHub...",
+	useSearchContext: () => useGitHub().activeSubType,
+	search: async (query, signal, subType) => {
 		if (!query.trim()) return [];
-
-		const res = await fetch(
-			`https://api.github.com/search/repositories?q=${encodeURIComponent(query.trim())}`,
-			{ signal },
-		);
-
-		if (!res.ok) {
-			if (res.status === 403) {
-				throw new Error(
-					"Rate limit atingido. Aguarde um momento e tente novamente.",
-				);
-			}
-			throw new Error(`Erro ao buscar: ${res.status} ${res.statusText}`);
-		}
-
-		const data = await res.json();
-		const repos: GitHubRepo[] = data.items ?? [];
-
-		return repos.map((repo) => ({
-			id: String(repo.id),
-			title: repo.full_name,
-			subtitle: repo.description ?? undefined,
-			icon: createElement(BookMarked, { className: "h-4 w-4" }),
-			badge: `⭐ ${formatStars(repo.stargazers_count)}${repo.language ? ` · ${repo.language}` : ""}`,
-			onSelect: () => window.open(repo.html_url, "_blank"),
-		}));
+		return githubSearch(query, subType ?? DEFAULT_SUBTYPE, signal);
 	},
 };
