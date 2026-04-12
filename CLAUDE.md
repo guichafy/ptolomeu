@@ -22,6 +22,8 @@ bun run test               # Unit tests (Vitest)
 bun run test:e2e           # E2E tests — Appium Mac2 (requires Xcode + mac2 driver)
 bun run screenshots        # Build + E2E screenshots to docs/screenshots/
 bun run lint               # Biome linting
+bun run lint:fix           # Biome auto-fix
+bun run devtools           # Launch React DevTools standalone
 ```
 
 ## Architecture
@@ -31,6 +33,22 @@ bun run lint               # Biome linting
 1. **Main process** (`src/bun/index.ts`) — runs in Bun. Manages windows, system tray, native FFI. Hides dock icon (`Utils.setDockIconVisible(false)`) — app lives in the menu bar only. Window hides on close instead of quitting (native delegate behavior).
 
 2. **Renderer** (`src/mainview/`) — React app loaded in a BrowserWindow. Vite builds to `dist/`, which Electrobun copies into the app bundle per `electrobun.config.ts` copy rules.
+
+### Provider system
+
+Plugin-based search architecture in `src/mainview/providers/`. Each provider implements `SearchProvider` (id, label, icon, search function). Four built-in: `apps` (macOS launcher), `github` (repos/code/issues/users), `calc` (math expressions), `web` (Google/DDG/SO/YouTube). Registry in `registry.ts`, active provider managed via `ProviderContextProvider`.
+
+### Settings
+
+`src/mainview/settings/` — Dialog with three tabs (Plugins, GitHub, General). State in `SettingsContext` with debounced RPC persistence to `~/Library/Application Support/com.ptolomeu.app/settings.json`. Plugin reordering and custom filter management use `@dnd-kit` drag-drop. Main process handlers in `src/bun/settings.ts`.
+
+### State management
+
+Pure React Context — no external state library. Three nested providers: `SettingsProvider` (outermost, persistence) → `ProviderContextProvider` (active provider) → `GitHubProvider` (GitHub-specific state). Local `useState` in `App.tsx` for query/results/loading.
+
+### IPC/RPC
+
+Electrobun's `defineElectrobunRPC` with typed `PtolomeuRPCSchema`. Main process handlers in `src/bun/rpc.ts` (listApps, openApp, getAppIcon, resizeWindow, loadSettings, saveSettings, githubFetchSearch, githubGetTokenStatus, githubSetToken, githubDeleteToken, githubInvalidateCache). Renderer RPC in `src/mainview/providers/rpc.ts`. Pattern: request-response with async/await.
 
 ### Native layer
 
@@ -47,6 +65,8 @@ bun run lint               # Biome linting
 - cmdk for command menu
 - Tailwind CSS 3 with dark mode enabled by default
 - `src/lib/utils.ts` exports `cn()` (clsx + tailwind-merge)
+- lucide-react for icons
+- @dnd-kit for drag-drop (plugin reordering, custom filters)
 
 ### Key config files
 
@@ -60,3 +80,5 @@ bun run lint               # Biome linting
 - UI labels are in Portuguese (pt-BR): "Abrir", "Sair", etc.
 - Package manager is Bun — use `bun install`, `bun run`, `bunx`
 - Path alias `@/*` maps to `src/*` (configured in tsconfig and components.json)
+- Linter/formatter is Biome — run `bun run lint:fix` before committing
+- Commit messages follow conventional commits: `type(scope): description`
