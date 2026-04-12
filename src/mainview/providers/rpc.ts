@@ -129,6 +129,7 @@ export function setOpenPreferencesHandler(
 }
 
 const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
+	maxRequestTime: 30_000,
 	handlers: {
 		messages: {
 			openPreferences: (args) => {

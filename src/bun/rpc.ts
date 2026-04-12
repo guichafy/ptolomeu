@@ -242,7 +242,29 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 				return true;
 			},
 			githubFetchSearch: async ({ subType, query }) => {
-				return githubFetchSearch({ subType, query });
+				const started = Date.now();
+				const label =
+					subType.kind === "native"
+						? subType.type
+						: `custom:${subType.filter.kind}:${subType.filter.name}`;
+				try {
+					const result = await githubFetchSearch({ subType, query });
+					console.log(
+						`[github] ${label} "${query}" → ${result.items.length} items ${
+							result.cached ? "(cache)" : `(${Date.now() - started}ms)`
+						}`,
+					);
+					return result;
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					console.error(
+						`[github] ${label} "${query}" failed after ${Date.now() - started}ms: ${message}`,
+					);
+					if (err instanceof Error && err.stack) {
+						console.error(err.stack);
+					}
+					throw err;
+				}
 			},
 			githubInvalidateCache: async () => {
 				invalidateSearchCache();
