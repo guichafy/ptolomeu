@@ -27,6 +27,7 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 		requests: {
 			listApps: { params: void; response: { name: string; path: string }[] };
 			openApp: { params: { path: string }; response: boolean };
+			openUrl: { params: { url: string }; response: boolean };
 			getAppIcon: {
 				params: { path: string };
 				response: { icon: string | null };
@@ -200,6 +201,14 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 			openApp: async ({ path }) => {
 				try {
 					Bun.spawn(["open", "-a", path]);
+					return true;
+				} catch {
+					return false;
+				}
+			},
+			openUrl: async ({ url }) => {
+				try {
+					Bun.spawn(["open", url]);
 					return true;
 				} catch {
 					return false;
