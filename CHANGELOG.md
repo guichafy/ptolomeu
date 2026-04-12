@@ -1,3 +1,11 @@
+# [1.2.0](https://github.com/guichafy/ptolomeu/compare/v1.1.0...v1.2.0) (2026-04-12)
+
+
+### Features
+
+* **icons:** use ptolomeu.icns as official app and tray icon ([5e6a0e2](https://github.com/guichafy/ptolomeu/commit/5e6a0e2436552e3661d06a1b2ab277372534251b))
+* **ui:** migrate Tailwind CSS v3 to v4 with CSS-first config ([4a9a384](https://github.com/guichafy/ptolomeu/commit/4a9a384faaa99d2a443ad61028af4d245fde0a4c))
+
 # [1.1.0](https://github.com/guichafy/ptolomeu/compare/v1.0.0...v1.1.0) (2026-04-12)
 
 
