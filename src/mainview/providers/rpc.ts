@@ -79,7 +79,7 @@ export interface TokenStatus {
 	login?: string;
 }
 
-export type SettingsSection = "plugins" | "general" | "github";
+export type SettingsSection = "plugins" | "general" | `plugin:${string}`;
 
 interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 	bun: {

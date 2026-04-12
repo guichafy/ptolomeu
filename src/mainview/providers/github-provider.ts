@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import { GitHubSection } from "../settings/github-section";
 import { githubSearch } from "./github/api";
 import type { GitHubSubType } from "./github/types";
 import { useGitHub } from "./github-context";
@@ -33,6 +34,7 @@ export const githubProvider: SearchProvider = {
 			onCacheStatus: setLastSearchCached,
 		} satisfies GithubProviderContext;
 	},
+	configComponent: GitHubSection,
 	search: async (query, signal, context) => {
 		if (!query.trim()) return [];
 		const ctx = context as GithubProviderContext | undefined;

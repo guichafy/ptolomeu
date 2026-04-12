@@ -47,3 +47,11 @@ export const PLUGIN_META: PluginMeta[] = [
 ];
 
 export const KNOWN_PLUGIN_IDS = PLUGIN_META.map((p) => p.id);
+
+export function findPluginMeta(id: string): PluginMeta | undefined {
+	return PLUGIN_META.find((p) => p.id === id);
+}
+
+export function hasPluginConfig(id: string): boolean {
+	return !!PLUGIN_REGISTRY[id]?.configComponent;
+}

@@ -24,4 +24,5 @@ export interface SearchProvider {
 		signal?: AbortSignal,
 		context?: unknown,
 	) => Promise<SearchResult[]>;
+	configComponent?: ComponentType;
 }
