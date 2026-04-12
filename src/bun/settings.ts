@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const KNOWN_PLUGIN_IDS = ["apps", "github", "calc", "web"] as const;
+export const KNOWN_PLUGIN_IDS = ["apps", "github", "calc", "web", "claude"] as const;
 export type PluginId = (typeof KNOWN_PLUGIN_IDS)[number];
 
 export type GitHubSearchType = "repos" | "code" | "issues" | "users";
@@ -57,14 +57,14 @@ export const DEFAULT_ANALYTICS_SETTINGS: AnalyticsSettings = {
 const DEFAULT_SETTINGS: Settings = {
 	version: 1,
 	plugins: {
-		enabledOrder: ["apps", "github", "calc", "web"],
+		enabledOrder: ["apps", "github", "calc", "web", "claude"],
 	},
 	github: DEFAULT_GITHUB_SETTINGS,
 	analytics: DEFAULT_ANALYTICS_SETTINGS,
 };
 
 const MIN_ACTIVE = 1;
-const MAX_ACTIVE = 5;
+const MAX_ACTIVE = 6;
 const VALID_BASE_TYPES: readonly GitHubSearchType[] = [
 	"repos",
 	"code",
