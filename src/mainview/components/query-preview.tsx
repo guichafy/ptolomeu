@@ -59,7 +59,7 @@ export function QueryPreview({ query, baseType, onQueryEdit }: Props) {
 				</div>
 				<input
 					type="text"
-					className="w-full bg-transparent font-mono text-xs text-green-400 outline-none placeholder:text-muted-foreground"
+					className="w-full bg-transparent font-mono text-xs text-green-400 outline-hidden placeholder:text-muted-foreground"
 					value={rawEdit}
 					onChange={(e) => {
 						setRawEdit(e.target.value);

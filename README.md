@@ -1,6 +1,6 @@
 # Ptolomeu
 
-App de menu bar para macOS que permite buscar repositórios no GitHub diretamente da barra de menus. Construído com [Electrobun](https://electrobun.dev/) (runtime Bun), React 18, Tailwind CSS e Vite.
+App de menu bar para macOS que permite buscar repositórios no GitHub diretamente da barra de menus. Construído com [Electrobun](https://electrobun.dev/) (runtime Bun), React 18, Tailwind CSS 4 e Vite.
 
 ## Funcionalidades
 
@@ -82,7 +82,7 @@ Após alterações no `.m`, recompilar com `bun run build:native`.
 - [shadcn/ui](https://ui.shadcn.com/) (estilo New York) — `src/components/ui/`
 - [Radix UI](https://www.radix-ui.com/) (Dialog, Popover, ScrollArea)
 - [cmdk](https://cmdk.paco.me/) — command palette
-- [Tailwind CSS 3](https://tailwindcss.com/) com dark mode
+- [Tailwind CSS 4](https://tailwindcss.com/) com dark mode (CSS-first config via `@theme inline`)
 - [Lucide React](https://lucide.dev/) — ícones
 
 ## Estrutura do projeto
@@ -109,9 +109,9 @@ src/
 | Arquivo | Descrição |
 |---------|-----------|
 | `electrobun.config.ts` | Identidade do app (`com.ptolomeu.app`), regras de cópia no build |
-| `vite.config.ts` | Root em `src/mainview/`, output para `dist/` |
+| `vite.config.ts` | Root em `src/mainview/`, output para `dist/`, plugin `@tailwindcss/vite` |
 | `components.json` | Config shadcn/ui com alias `@/` → `src/` |
-| `tailwind.config.js` | Theming via CSS variables, animações customizadas |
+| `src/mainview/index.css` | Tailwind CSS 4: `@theme inline` (cores, radius), dark mode via `@custom-variant` |
 
 ## Licença
 
