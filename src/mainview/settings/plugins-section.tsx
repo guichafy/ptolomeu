@@ -200,14 +200,14 @@ export function PluginsSection({
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex flex-col gap-2">
+			<div className="flex flex-col gap-1">
 				<div className="flex items-center justify-between">
 					<h2 className="text-lg font-semibold">Plugins</h2>
-					<span className="text-xs text-muted-foreground">
-						Ativos ({enabledOrder.length}/{MAX_ACTIVE})
+					<span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+						{enabledOrder.length}/{MAX_ACTIVE} ativos
 					</span>
 				</div>
-				<p className="text-xs text-muted-foreground">
+				<p className="text-xs text-muted-foreground/80">
 					Arraste para reordenar. A ordem define o ciclo do Tab na paleta.
 				</p>
 			</div>
