@@ -48,6 +48,7 @@ function PaletteContent() {
 	const [isComboboxOpen, setIsComboboxOpen] = useState(false);
 	const abortRef = useRef<AbortController | null>(null);
 	const prevProviderRef = useRef(activeProvider.id);
+	const resultsQueryRef = useRef("");
 
 	// Reset state when provider changes
 	useEffect(() => {
@@ -57,6 +58,7 @@ function PaletteContent() {
 			setError(null);
 			setSelectedIndex(0);
 			setLastSearchCached(null);
+			resultsQueryRef.current = "";
 			prevProviderRef.current = activeProvider.id;
 		}
 	}, [activeProvider.id, setLastSearchCached]);
@@ -87,12 +89,14 @@ function PaletteContent() {
 			);
 			if (!controller.signal.aborted) {
 				setResults(items);
+				resultsQueryRef.current = query;
 			}
 		} catch (err) {
 			if (err instanceof DOMException && err.name === "AbortError") return;
 			if (!controller.signal.aborted) {
 				setError(err instanceof Error ? err.message : "Erro desconhecido");
 				setResults([]);
+				resultsQueryRef.current = "";
 			}
 		} finally {
 			if (!controller.signal.aborted) {
@@ -165,6 +169,7 @@ function PaletteContent() {
 			setResults([]);
 			setError(null);
 			setSelectedIndex(0);
+			resultsQueryRef.current = "";
 			return;
 		}
 		if (e.key === "Tab") {
@@ -186,7 +191,8 @@ function PaletteContent() {
 			return;
 		}
 		if (e.key === "Enter") {
-			if (results[selectedIndex]) {
+			const resultsAreFresh = resultsQueryRef.current === query;
+			if (resultsAreFresh && results[selectedIndex]) {
 				results[selectedIndex].onSelect();
 			} else if (activeProvider.id !== "calc" && activeProvider.id !== "apps") {
 				handleSearch();
