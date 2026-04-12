@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as githubToken from "../github-token";
 import { githubFetchSearch } from "./github-fetch";
-import { _resetCache } from "./team-repos-cache";
+import { invalidateAll as invalidateSearchCache } from "./search-cache";
 
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
-	_resetCache();
+	invalidateSearchCache();
 	vi.spyOn(githubToken, "getToken").mockResolvedValue("tok");
 });
 
@@ -40,12 +40,13 @@ describe("githubFetchSearch", () => {
 		});
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-		const items = await githubFetchSearch({
+		const result = await githubFetchSearch({
 			subType: { kind: "native", type: "repos" },
 			query: "react",
 		});
-		expect(items).toHaveLength(1);
-		expect(items[0].kind).toBe("repo");
+		expect(result.items).toHaveLength(1);
+		expect(result.items[0].kind).toBe("repo");
+		expect(result.cached).toBe(false);
 	});
 
 	it("code nativo → /search/code", async () => {
@@ -53,11 +54,12 @@ describe("githubFetchSearch", () => {
 			expect(String(url)).toContain("/search/code");
 			return new Response(JSON.stringify({ items: [] }), { status: 200 });
 		}) as unknown as typeof fetch;
-		const items = await githubFetchSearch({
+		const result = await githubFetchSearch({
 			subType: { kind: "native", type: "code" },
 			query: "useState",
 		});
-		expect(items).toEqual([]);
+		expect(result.items).toEqual([]);
+		expect(result.cached).toBe(false);
 	});
 
 	it("issues nativo → /search/issues normaliza PR vs issue", async () => {
@@ -89,14 +91,14 @@ describe("githubFetchSearch", () => {
 					{ status: 200 },
 				),
 		) as unknown as typeof fetch;
-		const items = await githubFetchSearch({
+		const result = await githubFetchSearch({
 			subType: { kind: "native", type: "issues" },
 			query: "bug",
 		});
-		expect(items).toHaveLength(2);
-		expect(items[0].kind).toBe("issue");
-		expect((items[1] as { isPR: boolean }).isPR).toBe(true);
-		expect((items[0] as { isPR: boolean }).isPR).toBe(false);
+		expect(result.items).toHaveLength(2);
+		expect(result.items[0].kind).toBe("issue");
+		expect((result.items[1] as { isPR: boolean }).isPR).toBe(true);
+		expect((result.items[0] as { isPR: boolean }).isPR).toBe(false);
 	});
 
 	it("users nativo → /search/users", async () => {
@@ -111,11 +113,11 @@ describe("githubFetchSearch", () => {
 					{ status: 200 },
 				),
 		) as unknown as typeof fetch;
-		const items = await githubFetchSearch({
+		const result = await githubFetchSearch({
 			subType: { kind: "native", type: "users" },
 			query: "guichafy",
 		});
-		expect(items[0].kind).toBe("user");
+		expect(result.items[0].kind).toBe("user");
 	});
 
 	it("custom search-query prefixa qualifiers", async () => {
@@ -140,7 +142,7 @@ describe("githubFetchSearch", () => {
 		});
 	});
 
-	it("custom team-repos chama team-repos-cache e devolve repo items", async () => {
+	it("custom team-repos busca via /orgs/../teams e devolve repo items filtrados", async () => {
 		globalThis.fetch = vi.fn(async (url: string | URL) => {
 			expect(String(url)).toContain("/orgs/Chafy-Studio/teams/chafy/repos");
 			return new Response(
@@ -158,7 +160,7 @@ describe("githubFetchSearch", () => {
 				{ status: 200, headers: { Link: "" } },
 			);
 		}) as unknown as typeof fetch;
-		const items = await githubFetchSearch({
+		const result = await githubFetchSearch({
 			subType: {
 				kind: "custom",
 				filter: {
@@ -171,8 +173,8 @@ describe("githubFetchSearch", () => {
 			},
 			query: "ptolomeu",
 		});
-		expect(items).toHaveLength(1);
-		expect(items[0].kind).toBe("repo");
+		expect(result.items).toHaveLength(1);
+		expect(result.items[0].kind).toBe("repo");
 	});
 
 	it("propaga erro quando rate limit (403)", async () => {
@@ -189,5 +191,92 @@ describe("githubFetchSearch", () => {
 				query: "x",
 			}),
 		).rejects.toThrow(/rate limit/i);
+	});
+
+	it("segunda chamada com MESMO termo retorna cached=true sem fetch", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						items: [
+							{
+								id: 1,
+								full_name: "a/b",
+								description: null,
+								stargazers_count: 0,
+								language: null,
+								html_url: "",
+							},
+						],
+					}),
+					{ status: 200 },
+				),
+		);
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		const first = await githubFetchSearch({
+			subType: { kind: "native", type: "repos" },
+			query: "react",
+		});
+		expect(first.cached).toBe(false);
+		const second = await githubFetchSearch({
+			subType: { kind: "native", type: "repos" },
+			query: "react",
+		});
+		expect(second.cached).toBe(true);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("termos diferentes geram fetches diferentes (sem reuso de cache)", async () => {
+		const fetchMock = vi.fn(async (url: string | URL) => {
+			const u = new URL(String(url));
+			return new Response(
+				JSON.stringify({
+					items: [
+						{
+							id: 1,
+							full_name: `a/${u.searchParams.get("q")}`,
+							description: null,
+							stargazers_count: 0,
+							language: null,
+							html_url: "",
+						},
+					],
+				}),
+				{ status: 200 },
+			);
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		await githubFetchSearch({
+			subType: { kind: "native", type: "repos" },
+			query: "foo",
+		});
+		await githubFetchSearch({
+			subType: { kind: "native", type: "repos" },
+			query: "bar",
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("LRU máximo 3: 4º termo único evicta o primeiro", async () => {
+		const fetchMock = vi.fn(
+			async () => new Response(JSON.stringify({ items: [] }), { status: 200 }),
+		);
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		const sub: { kind: "native"; type: "repos" } = {
+			kind: "native",
+			type: "repos",
+		};
+		await githubFetchSearch({ subType: sub, query: "a" });
+		await githubFetchSearch({ subType: sub, query: "b" });
+		await githubFetchSearch({ subType: sub, query: "c" });
+		await githubFetchSearch({ subType: sub, query: "d" });
+		expect(fetchMock).toHaveBeenCalledTimes(4);
+		// Agora "a" foi evictado; refazer "a" vira miss + novo fetch
+		const again = await githubFetchSearch({ subType: sub, query: "a" });
+		expect(again.cached).toBe(false);
+		expect(fetchMock).toHaveBeenCalledTimes(5);
+		// "d" continua no cache
+		const dHit = await githubFetchSearch({ subType: sub, query: "d" });
+		expect(dHit.cached).toBe(true);
 	});
 });

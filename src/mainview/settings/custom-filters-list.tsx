@@ -115,11 +115,7 @@ export function CustomFiltersList() {
 
 	function handleDelete(filter: CustomFilter) {
 		updateCustomFilters(customFilters.filter((f) => f.id !== filter.id));
-		if (filter.kind === "team-repos") {
-			rpc.request
-				.githubInvalidateTeamCache({ org: filter.org, team: filter.team })
-				.catch(() => {});
-		}
+		rpc.request.githubInvalidateCache().catch(() => {});
 	}
 
 	function handleSave(filter: CustomFilter) {
@@ -128,17 +124,10 @@ export function CustomFiltersList() {
 			updateCustomFilters(
 				customFilters.map((f) => (f.id === filter.id ? filter : f)),
 			);
-			if (existing.kind === "team-repos") {
-				rpc.request
-					.githubInvalidateTeamCache({
-						org: existing.org,
-						team: existing.team,
-					})
-					.catch(() => {});
-			}
 		} else {
 			updateCustomFilters([...customFilters, filter]);
 		}
+		rpc.request.githubInvalidateCache().catch(() => {});
 	}
 
 	return (

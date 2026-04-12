@@ -7,7 +7,7 @@ import {
 	type GitHubSubType,
 	githubFetchSearch,
 } from "./github/github-fetch";
-import { invalidate as invalidateTeamRepos } from "./github/team-repos-cache";
+import { invalidateAll as invalidateSearchCache } from "./github/search-cache";
 import {
 	deleteToken as deleteGithubToken,
 	getStatus as getGithubTokenStatus,
@@ -42,10 +42,10 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			githubDeleteToken: { params: void; response: boolean };
 			githubFetchSearch: {
 				params: { subType: GitHubSubType; query: string };
-				response: GitHubItem[];
+				response: { items: GitHubItem[]; cached: boolean };
 			};
-			githubInvalidateTeamCache: {
-				params: { org: string; team: string };
+			githubInvalidateCache: {
+				params: void;
 				response: boolean;
 			};
 		};
@@ -244,8 +244,8 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 			githubFetchSearch: async ({ subType, query }) => {
 				return githubFetchSearch({ subType, query });
 			},
-			githubInvalidateTeamCache: async ({ org, team }) => {
-				invalidateTeamRepos(org, team);
+			githubInvalidateCache: async () => {
+				invalidateSearchCache();
 				return true;
 			},
 		},
