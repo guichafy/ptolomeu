@@ -60,9 +60,13 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 }
 
 // Window reference for resize handler (set from index.ts)
-let mainWindowRef: { setSize: (w: number, h: number) => void } | null = null;
+let mainWindowRef: {
+	getFrame: () => { x: number; y: number; width: number; height: number };
+	setFrame: (x: number, y: number, w: number, h: number) => void;
+} | null = null;
 export function setMainWindow(win: {
-	setSize: (w: number, h: number) => void;
+	getFrame: () => { x: number; y: number; width: number; height: number };
+	setFrame: (x: number, y: number, w: number, h: number) => void;
 }) {
 	mainWindowRef = win;
 }
@@ -207,7 +211,10 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 			},
 			resizeWindow: async ({ height }) => {
 				if (mainWindowRef) {
-					mainWindowRef.setSize(630, height);
+					const frame = mainWindowRef.getFrame();
+					if (frame.height === height) return true;
+					const newY = frame.y + (frame.height - height) / 2;
+					mainWindowRef.setFrame(frame.x, newY, 630, height);
 					return true;
 				}
 				return false;
