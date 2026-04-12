@@ -15,12 +15,13 @@ export default {
 			"dist/index.html": "views/mainview/index.html",
 			"dist/assets": "views/mainview/assets",
 			"src/bun/native/liboverlay.dylib": "native/liboverlay.dylib",
-			"icone.png": "views/icone.png",
+			"src/bun/tray-icon.png": "native/tray-icon.png",
 		},
 		// Ignore Vite output in watch mode — HMR handles view rebuilds separately
 		watchIgnore: ["dist/**"],
 		mac: {
 			bundleCEF: false,
+			icons: "ptolomeu.iconset",
 		},
 		linux: {
 			bundleCEF: false,
