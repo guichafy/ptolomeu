@@ -239,23 +239,7 @@ function PaletteContent() {
 				</div>
 			) : hasContent ? (
 				<div className="flex-1 flex flex-col overflow-hidden animate-in fade-in-0 slide-in-from-top-2 duration-200">
-					{isLoading ? (
-						<div className="flex-1 flex items-center justify-center">
-							<p className="text-sm text-muted-foreground animate-pulse">
-								Buscando...
-							</p>
-						</div>
-					) : error ? (
-						<div className="flex-1 flex items-center justify-center px-4">
-							<p className="text-sm text-destructive text-center">{error}</p>
-						</div>
-					) : results.length === 0 ? (
-						<div className="flex-1 flex items-center justify-center">
-							<p className="text-sm text-muted-foreground">
-								Nenhum resultado encontrado
-							</p>
-						</div>
-					) : (
+					{results.length > 0 ? (
 						<ScrollArea className="flex-1">
 							<div className="p-2">
 								{results.map((result, i) => (
@@ -267,6 +251,22 @@ function PaletteContent() {
 								))}
 							</div>
 						</ScrollArea>
+					) : isLoading ? (
+						<div className="flex-1 flex items-center justify-center">
+							<p className="text-sm text-muted-foreground animate-pulse">
+								Buscando...
+							</p>
+						</div>
+					) : error ? (
+						<div className="flex-1 flex items-center justify-center px-4">
+							<p className="text-sm text-destructive text-center">{error}</p>
+						</div>
+					) : (
+						<div className="flex-1 flex items-center justify-center">
+							<p className="text-sm text-muted-foreground">
+								Nenhum resultado encontrado
+							</p>
+						</div>
 					)}
 				</div>
 			) : null}
