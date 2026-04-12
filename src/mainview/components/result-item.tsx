@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { SearchResult } from "../providers/types";
 
@@ -7,8 +8,17 @@ interface ResultItemProps {
 }
 
 export function ResultItem({ result, isSelected }: ResultItemProps) {
+	const ref = useRef<HTMLButtonElement>(null);
+
+	useEffect(() => {
+		if (isSelected) {
+			ref.current?.scrollIntoView({ block: "nearest" });
+		}
+	}, [isSelected]);
+
 	return (
 		<button
+			ref={ref}
 			type="button"
 			className={cn(
 				"flex items-center gap-3 px-3 py-2.5 w-full text-left rounded-md transition-colors",
