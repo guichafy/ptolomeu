@@ -84,16 +84,3 @@
 		@apply bg-background text-foreground;
 	}
 }
-
-/* Window drag region for titleBarStyle: hiddenInset */
-.chat-drag-region {
-	-webkit-app-region: drag;
-}
-
-/* Buttons inside drag region must be clickable */
-.chat-drag-region button,
-.chat-drag-region a,
-.chat-drag-region input,
-.chat-drag-region textarea {
-	-webkit-app-region: no-drag;
-}

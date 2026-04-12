@@ -140,7 +140,7 @@ async function openChatWindow(sessionId?: string) {
 		title: "Ptolomeu — Chat",
 		url,
 		hidden: false,
-		titleBarStyle: "hiddenInset",
+		titleBarStyle: "default",
 		styleMask: {
 			Borderless: false,
 			Titled: true,
