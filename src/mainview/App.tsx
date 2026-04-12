@@ -211,19 +211,17 @@ function PaletteContent() {
 			onKeyDown={handleKeyDown}
 		>
 			<ModeBar />
-			<div className="border-b px-4 py-3">
+			<div className="border-b px-4 py-3 flex items-center gap-2">
+				{activeProvider.id === "github" && (
+					<SearchTypeCombobox
+						ref={comboboxRef}
+						onOpenChange={setIsComboboxOpen}
+					/>
+				)}
 				<SearchInput
 					placeholder={activeProvider.placeholder}
 					value={query}
 					onChange={handleQueryChange}
-					leftSlot={
-						activeProvider.id === "github" ? (
-							<SearchTypeCombobox
-								ref={comboboxRef}
-								onOpenChange={setIsComboboxOpen}
-							/>
-						) : undefined
-					}
 				/>
 			</div>
 
