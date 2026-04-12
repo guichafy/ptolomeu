@@ -6,7 +6,8 @@ import {
 	Settings,
 	Users,
 } from "lucide-react";
-import React, { forwardRef, useImperativeHandle, useState } from "react";
+import type React from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 import {
 	Popover,
 	PopoverContent,
@@ -41,7 +42,8 @@ const NATIVE_ICONS: Record<string, React.ReactNode> = {
 };
 
 function iconFor(subType: GitHubSubType): React.ReactNode {
-	if (subType.kind === "native") return NATIVE_ICONS[subType.type] ?? <BookMarked className="h-3 w-3" />;
+	if (subType.kind === "native")
+		return NATIVE_ICONS[subType.type] ?? <BookMarked className="h-3 w-3" />;
 	return subType.filter.icon ?? "⭐";
 }
 

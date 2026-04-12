@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -9,7 +9,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { EmojiPicker } from "../components/emoji-picker";
+import { QueryBuilderPanel } from "../components/query-builder-panel";
+import { TeamReposPreview } from "../components/team-repos-preview";
 import type { CustomFilter, GitHubSearchType } from "../providers/github/types";
+import { rpc } from "../providers/rpc";
+
+const SETTINGS_HEIGHT = 480;
+const FILTER_DIALOG_HEIGHT_TEAM = 740;
+const FILTER_DIALOG_HEIGHT_SEARCH = 780;
 
 interface Props {
 	open: boolean;
@@ -94,25 +102,50 @@ export function CustomFilterDialog({ open, initial, onClose, onSave }: Props) {
 		onClose();
 	}
 
+	// Resize window to fit dialog content
+	useEffect(() => {
+		if (!open) return;
+		const height =
+			kind === "search"
+				? FILTER_DIALOG_HEIGHT_SEARCH
+				: FILTER_DIALOG_HEIGHT_TEAM;
+		rpc.request.resizeWindow({ height }).catch(() => {});
+		return () => {
+			rpc.request.resizeWindow({ height: SETTINGS_HEIGHT }).catch(() => {});
+		};
+	}, [open, kind]);
+
+	const handleQualifiersChange = useCallback((q: string) => {
+		setQualifiers(q);
+	}, []);
+
+	const isSearch = kind === "search";
+
 	return (
 		<Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-			<DialogContent className="max-w-[460px]">
+			<DialogContent
+				className={cn(
+					"transition-[max-width]",
+					isSearch ? "max-w-[680px]" : "max-w-[460px]",
+				)}
+			>
 				<DialogHeader>
 					<DialogTitle>{initial ? "Editar filtro" : "Novo filtro"}</DialogTitle>
 				</DialogHeader>
 				<div className="flex flex-col gap-3 py-2">
+					{/* Kind selector */}
 					<div>
-						<div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+						<div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-foreground/70">
 							Tipo do filtro
 						</div>
 						<div className="flex gap-2">
 							<button
 								type="button"
 								className={cn(
-									"rounded-full border px-3 py-1 text-xs",
+									"rounded-full border px-3 py-1 text-xs font-medium transition-colors",
 									kind === "team-repos"
-										? "border-primary bg-primary/20 text-primary-foreground"
-										: "border-border text-muted-foreground",
+										? "border-blue-500/50 bg-blue-500/15 text-blue-400"
+										: "border-border text-foreground/50 hover:text-foreground/70",
 								)}
 								onClick={() => setKind("team-repos")}
 							>
@@ -121,10 +154,10 @@ export function CustomFilterDialog({ open, initial, onClose, onSave }: Props) {
 							<button
 								type="button"
 								className={cn(
-									"rounded-full border px-3 py-1 text-xs",
+									"rounded-full border px-3 py-1 text-xs font-medium transition-colors",
 									kind === "search"
-										? "border-primary bg-primary/20 text-primary-foreground"
-										: "border-border text-muted-foreground",
+										? "border-blue-500/50 bg-blue-500/15 text-blue-400"
+										: "border-border text-foreground/50 hover:text-foreground/70",
 								)}
 								onClick={() => setKind("search")}
 							>
@@ -132,11 +165,18 @@ export function CustomFilterDialog({ open, initial, onClose, onSave }: Props) {
 							</button>
 						</div>
 					</div>
-					<div className="grid grid-cols-[1fr_80px] gap-2">
-						<div className="flex flex-col gap-1">
+
+					{/* Name + Icon + BaseType (shared top bar) */}
+					<div
+						className={cn(
+							"gap-2",
+							isSearch ? "flex items-end" : "grid grid-cols-[1fr_80px]",
+						)}
+					>
+						<div className="flex flex-1 flex-col gap-1">
 							<label
 								htmlFor="filter-name"
-								className="text-xs text-muted-foreground"
+								className="text-[11px] font-medium text-foreground/70"
 							>
 								Nome
 							</label>
@@ -146,70 +186,27 @@ export function CustomFilterDialog({ open, initial, onClose, onSave }: Props) {
 								onChange={(e) => setName(e.target.value)}
 							/>
 						</div>
-						<div className="flex flex-col gap-1">
-							<label
-								htmlFor="filter-icon"
-								className="text-xs text-muted-foreground"
-							>
+						<div className="flex w-[60px] flex-col gap-1">
+							<span className="text-[11px] font-medium text-foreground/70">
 								Ícone
-							</label>
-							<Input
-								id="filter-icon"
-								value={icon}
-								onChange={(e) => setIcon(e.target.value)}
-								maxLength={2}
-							/>
+							</span>
+							<EmojiPicker value={icon} onChange={setIcon} />
 						</div>
-					</div>
-					{kind === "team-repos" ? (
-						<>
+						{isSearch && (
 							<div className="flex flex-col gap-1">
-								<label
-									htmlFor="filter-org"
-									className="text-xs text-muted-foreground"
-								>
-									Organização
-								</label>
-								<Input
-									id="filter-org"
-									value={org}
-									onChange={(e) => setOrg(e.target.value)}
-									placeholder="Chafy-Studio"
-								/>
-							</div>
-							<div className="flex flex-col gap-1">
-								<label
-									htmlFor="filter-team"
-									className="text-xs text-muted-foreground"
-								>
-									Team slug
-								</label>
-								<Input
-									id="filter-team"
-									value={team}
-									onChange={(e) => setTeam(e.target.value)}
-									placeholder="chafy"
-								/>
-							</div>
-							<p className="text-[11px] text-muted-foreground">
-								Busca via /orgs/{"{org}"}/teams/{"{team}"}/repos com filtro
-								client-side.
-							</p>
-						</>
-					) : (
-						<>
-							<div className="flex flex-col gap-1">
-								<div className="text-xs text-muted-foreground">Tipo base</div>
+								<div className="text-[11px] font-medium text-foreground/70">
+									Tipo base
+								</div>
 								<div className="flex gap-1">
 									{BASE_TYPES.map((b) => (
 										<button
 											key={b.value}
 											type="button"
 											className={cn(
-												"rounded-md border px-2 py-1 text-xs",
+												"rounded-md border px-2 py-1 text-xs font-medium transition-colors",
 												baseType === b.value
-													? "border-primary bg-primary/20"
-													: "border-border text-muted-foreground",
+													? "border-blue-500/50 bg-blue-500/15 text-blue-400"
+													: "border-border text-foreground/50 hover:text-foreground/70",
 											)}
 											onClick={() => setBaseType(b.value)}
 										>
@@ -218,25 +215,69 @@ export function CustomFilterDialog({ open, initial, onClose, onSave }: Props) {
 									))}
 								</div>
 							</div>
-							<div className="flex flex-col gap-1">
-								<label
-									htmlFor="filter-qualifiers"
-									className="text-xs text-muted-foreground"
-								>
-									Qualificadores extras
-								</label>
-								<Input
-									id="filter-qualifiers"
-									value={qualifiers}
-									onChange={(e) => setQualifiers(e.target.value)}
-									placeholder="is:pr is:open author:@me"
-								/>
-								<p className="text-[11px] text-muted-foreground">
-									Prefixados à query do usuário na busca.
-								</p>
+						)}
+					</div>
+
+					{/* Kind-specific content */}
+					{kind === "team-repos" ? (
+						<>
+							<div className="flex flex-col gap-3 rounded-md border border-border/30 p-3">
+								<div className="flex items-center gap-2">
+									<div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-500/10">
+										<span className="text-sm">🏢</span>
+									</div>
+									<div className="text-[11px] font-medium text-foreground/70">
+										Configuração do Team
+									</div>
+								</div>
+								<div className="flex flex-col gap-1">
+									<label
+										htmlFor="filter-org"
+										className="text-[11px] font-medium text-foreground/70"
+									>
+										Organização
+									</label>
+									<Input
+										id="filter-org"
+										value={org}
+										onChange={(e) => setOrg(e.target.value)}
+										placeholder="Chafy-Studio"
+									/>
+								</div>
+								<div className="flex flex-col gap-1">
+									<label
+										htmlFor="filter-team"
+										className="text-[11px] font-medium text-foreground/70"
+									>
+										Team slug
+									</label>
+									<Input
+										id="filter-team"
+										value={team}
+										onChange={(e) => setTeam(e.target.value)}
+										placeholder="chafy"
+									/>
+								</div>
+								<div className="rounded-md bg-muted/30 px-3 py-2">
+									<p className="font-mono text-[10px] text-foreground/50">
+										GET /orgs/
+										<span className="text-blue-400">{org || "{org}"}</span>
+										/teams/
+										<span className="text-blue-400">{team || "{team}"}</span>
+										/repos
+									</p>
+								</div>
 							</div>
+							<TeamReposPreview org={org} team={team} />
 						</>
+					) : (
+						<QueryBuilderPanel
+							baseType={baseType}
+							initialQualifiers={qualifiers}
+							onChange={handleQualifiersChange}
+						/>
 					)}
+
 					{error && <p className="text-xs text-destructive">{error}</p>}
 				</div>
 				<DialogFooter>
