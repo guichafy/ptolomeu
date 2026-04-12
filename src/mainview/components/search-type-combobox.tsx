@@ -1,5 +1,12 @@
-import { ChevronDown, Settings } from "lucide-react";
-import { forwardRef, useImperativeHandle, useState } from "react";
+import {
+	BookMarked,
+	ChevronDown,
+	CircleDot,
+	Code,
+	Settings,
+	Users,
+} from "lucide-react";
+import React, { forwardRef, useImperativeHandle, useState } from "react";
 import {
 	Popover,
 	PopoverContent,
@@ -26,8 +33,15 @@ function labelFor(subType: GitHubSubType): string {
 	return subType.filter.name;
 }
 
-function iconFor(subType: GitHubSubType): string {
-	if (subType.kind === "native") return "◩";
+const NATIVE_ICONS: Record<string, React.ReactNode> = {
+	repos: <BookMarked className="h-3 w-3" />,
+	code: <Code className="h-3 w-3" />,
+	issues: <CircleDot className="h-3 w-3" />,
+	users: <Users className="h-3 w-3" />,
+};
+
+function iconFor(subType: GitHubSubType): React.ReactNode {
+	if (subType.kind === "native") return NATIVE_ICONS[subType.type] ?? <BookMarked className="h-3 w-3" />;
 	return subType.filter.icon ?? "⭐";
 }
 
