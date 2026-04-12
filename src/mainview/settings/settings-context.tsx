@@ -10,6 +10,7 @@ import {
 import { KNOWN_PLUGIN_IDS } from "../providers/registry";
 import {
 	type AnalyticsSettings,
+	type ClaudeSettings,
 	type CustomFilter,
 	rpc,
 	type Settings,
@@ -47,6 +48,12 @@ const DEFAULT_ANALYTICS: AnalyticsSettings = {
 	anonymousId: "",
 };
 
+const DEFAULT_CLAUDE: ClaudeSettings = {
+	authMode: "anthropic",
+	model: "claude-sonnet-4-6",
+	permissionMode: "acceptEdits",
+};
+
 function sanitizeOrder(order: string[]): string[] {
 	const seen = new Set<string>();
 	const clean: string[] = [];
@@ -77,6 +84,7 @@ function normalizeSettings(loaded: Settings): Settings {
 		},
 		github: loaded.github ?? DEFAULT_GITHUB,
 		analytics: loaded.analytics ?? DEFAULT_ANALYTICS,
+		claude: loaded.claude ?? DEFAULT_CLAUDE,
 	};
 }
 
@@ -102,6 +110,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 						plugins: { enabledOrder: [...KNOWN_PLUGIN_IDS] },
 						github: DEFAULT_GITHUB,
 						analytics: DEFAULT_ANALYTICS,
+						claude: DEFAULT_CLAUDE,
 					});
 				}
 			});
@@ -134,6 +143,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 					plugins: { enabledOrder: clean },
 					github: DEFAULT_GITHUB,
 					analytics: DEFAULT_ANALYTICS,
+					claude: DEFAULT_CLAUDE,
 				};
 				const updated: Settings = {
 					...base,
@@ -154,6 +164,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 					plugins: { enabledOrder: [...KNOWN_PLUGIN_IDS] },
 					github: DEFAULT_GITHUB,
 					analytics: DEFAULT_ANALYTICS,
+					claude: DEFAULT_CLAUDE,
 				};
 				const updated: Settings = {
 					...base,
@@ -174,6 +185,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 					plugins: { enabledOrder: [...KNOWN_PLUGIN_IDS] },
 					github: DEFAULT_GITHUB,
 					analytics: DEFAULT_ANALYTICS,
+					claude: DEFAULT_CLAUDE,
 				};
 				const updated: Settings = {
 					...base,

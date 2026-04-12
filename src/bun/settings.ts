@@ -2,7 +2,13 @@ import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const KNOWN_PLUGIN_IDS = ["apps", "github", "calc", "web", "claude"] as const;
+export const KNOWN_PLUGIN_IDS = [
+	"apps",
+	"github",
+	"calc",
+	"web",
+	"claude",
+] as const;
 export type PluginId = (typeof KNOWN_PLUGIN_IDS)[number];
 
 export type GitHubSearchType = "repos" | "code" | "issues" | "users";
@@ -35,6 +41,18 @@ export interface AnalyticsSettings {
 	anonymousId: string;
 }
 
+export type ClaudeAuthMode = "anthropic" | "bedrock";
+export type ClaudePermissionMode =
+	| "dontAsk"
+	| "acceptEdits"
+	| "bypassPermissions";
+
+export interface ClaudeSettings {
+	authMode: ClaudeAuthMode;
+	model: string;
+	permissionMode: ClaudePermissionMode;
+}
+
 export interface Settings {
 	version: 1;
 	plugins: {
@@ -42,6 +60,7 @@ export interface Settings {
 	};
 	github: GitHubSettings;
 	analytics: AnalyticsSettings;
+	claude: ClaudeSettings;
 }
 
 export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
@@ -54,6 +73,19 @@ export const DEFAULT_ANALYTICS_SETTINGS: AnalyticsSettings = {
 	anonymousId: crypto.randomUUID(),
 };
 
+export const DEFAULT_CLAUDE_SETTINGS: ClaudeSettings = {
+	authMode: "anthropic",
+	model: "claude-sonnet-4-6",
+	permissionMode: "acceptEdits",
+};
+
+const VALID_AUTH_MODES: readonly ClaudeAuthMode[] = ["anthropic", "bedrock"];
+const VALID_PERMISSION_MODES: readonly ClaudePermissionMode[] = [
+	"dontAsk",
+	"acceptEdits",
+	"bypassPermissions",
+];
+
 const DEFAULT_SETTINGS: Settings = {
 	version: 1,
 	plugins: {
@@ -61,6 +93,7 @@ const DEFAULT_SETTINGS: Settings = {
 	},
 	github: DEFAULT_GITHUB_SETTINGS,
 	analytics: DEFAULT_ANALYTICS_SETTINGS,
+	claude: DEFAULT_CLAUDE_SETTINGS,
 };
 
 const MIN_ACTIVE = 1;
@@ -154,6 +187,31 @@ export function validateSettings(value: unknown): ValidateResult {
 	} else {
 		analytics = { consentGiven: false, anonymousId: crypto.randomUUID() };
 	}
+	const rawClaude = (s as Record<string, unknown>).claude;
+	let claude: ClaudeSettings;
+	if (
+		rawClaude &&
+		typeof rawClaude === "object" &&
+		typeof (rawClaude as Record<string, unknown>).authMode === "string" &&
+		(VALID_AUTH_MODES as readonly string[]).includes(
+			(rawClaude as Record<string, unknown>).authMode as string,
+		) &&
+		typeof (rawClaude as Record<string, unknown>).model === "string" &&
+		(rawClaude as Record<string, unknown>).model &&
+		typeof (rawClaude as Record<string, unknown>).permissionMode === "string" &&
+		(VALID_PERMISSION_MODES as readonly string[]).includes(
+			(rawClaude as Record<string, unknown>).permissionMode as string,
+		)
+	) {
+		const c = rawClaude as Record<string, unknown>;
+		claude = {
+			authMode: c.authMode as ClaudeAuthMode,
+			model: c.model as string,
+			permissionMode: c.permissionMode as ClaudePermissionMode,
+		};
+	} else {
+		claude = { ...DEFAULT_CLAUDE_SETTINGS };
+	}
 	return {
 		ok: true,
 		value: {
@@ -161,6 +219,7 @@ export function validateSettings(value: unknown): ValidateResult {
 			plugins: { enabledOrder: order as string[] },
 			github,
 			analytics,
+			claude,
 		},
 	};
 }

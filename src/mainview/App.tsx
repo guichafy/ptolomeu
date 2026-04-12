@@ -106,9 +106,13 @@ function PaletteContent() {
 		}
 	}, [activeProvider, query, providerContext]);
 
-	// Auto-search for calculator (real-time) and apps (on any change)
+	// Auto-search for calculator (real-time), apps (on any change), and claude (recent sessions)
 	useEffect(() => {
-		if (activeProvider.id === "calc" || activeProvider.id === "apps") {
+		if (
+			activeProvider.id === "calc" ||
+			activeProvider.id === "apps" ||
+			activeProvider.id === "claude"
+		) {
 			const timer = setTimeout(
 				handleSearch,
 				activeProvider.id === "calc" ? 100 : 300,
@@ -193,9 +197,19 @@ function PaletteContent() {
 		}
 		if (e.key === "Enter") {
 			const resultsAreFresh = resultsQueryRef.current === query;
+			console.log("[App] Enter pressed", {
+				resultsAreFresh,
+				resultsQueryRef: resultsQueryRef.current,
+				query,
+				selectedIndex,
+				hasResult: !!results[selectedIndex],
+				providerId: activeProvider.id,
+			});
 			if (resultsAreFresh && results[selectedIndex]) {
+				console.log("[App] Calling onSelect for:", results[selectedIndex].title);
 				results[selectedIndex].onSelect();
 			} else if (activeProvider.id !== "calc" && activeProvider.id !== "apps") {
+				console.log("[App] Results not fresh, calling handleSearch");
 				handleSearch();
 			}
 			return;
