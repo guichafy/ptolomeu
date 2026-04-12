@@ -15,27 +15,30 @@ import {
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Minus, Plus } from "lucide-react";
+import { GripVertical, Minus, Plus, Settings } from "lucide-react";
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { PLUGIN_META, type PluginMeta } from "../providers/registry";
+import {
+	findPluginMeta,
+	hasPluginConfig,
+	PLUGIN_META,
+	type PluginMeta,
+} from "../providers/registry";
 import { useSettings } from "./settings-context";
 
 const MIN_ACTIVE = 1;
 const MAX_ACTIVE = 5;
 
-function findMeta(id: string): PluginMeta | undefined {
-	return PLUGIN_META.find((p) => p.id === id);
-}
-
 function ActivePluginRow({
 	meta,
 	canRemove,
 	onRemove,
+	onConfigure,
 }: {
 	meta: PluginMeta;
 	canRemove: boolean;
 	onRemove: () => void;
+	onConfigure?: () => void;
 }) {
 	const {
 		attributes,
@@ -74,6 +77,17 @@ function ActivePluginRow({
 			</button>
 			<Icon className="h-4 w-4 text-muted-foreground" />
 			<span className="flex-1 text-sm">{meta.label}</span>
+			{onConfigure && (
+				<button
+					type="button"
+					onClick={onConfigure}
+					className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+					aria-label={`Configurar ${meta.label}`}
+					title={`Configurar ${meta.label}`}
+				>
+					<Settings className="h-4 w-4" />
+				</button>
+			)}
 			<button
 				type="button"
 				onClick={onRemove}
@@ -135,13 +149,17 @@ function AvailablePluginRow({
 	);
 }
 
-export function PluginsSection() {
+export function PluginsSection({
+	onNavigateToPlugin,
+}: {
+	onNavigateToPlugin?: (pluginId: string) => void;
+} = {}) {
 	const { enabledOrder, updateEnabledOrder } = useSettings();
 
 	const activeMetas = useMemo(
 		() =>
 			enabledOrder
-				.map((id) => findMeta(id))
+				.map((id) => findPluginMeta(id))
 				.filter((m): m is PluginMeta => Boolean(m)),
 		[enabledOrder],
 	);
@@ -210,6 +228,11 @@ export function PluginsSection() {
 								meta={meta}
 								canRemove={canRemove}
 								onRemove={() => handleRemove(meta.id)}
+								onConfigure={
+									hasPluginConfig(meta.id) && onNavigateToPlugin
+										? () => onNavigateToPlugin(meta.id)
+										: undefined
+								}
 							/>
 						))}
 					</div>
