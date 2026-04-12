@@ -41,7 +41,7 @@ export function EmojiPicker({ value, onChange }: Props) {
 			<PopoverTrigger asChild>
 				<button
 					type="button"
-					className="flex h-9 w-full items-center justify-center rounded-md border border-input bg-transparent text-lg shadow-sm transition-colors hover:bg-accent"
+					className="flex h-9 w-full items-center justify-center rounded-md border border-input bg-transparent text-lg shadow-xs transition-colors hover:bg-accent"
 				>
 					{value || "⭐"}
 				</button>
