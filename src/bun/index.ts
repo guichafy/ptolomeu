@@ -1,6 +1,12 @@
 import { dlopen, FFIType } from "bun:ffi";
 import { join } from "node:path";
-import { BrowserWindow, Tray, Updater, Utils } from "electrobun/bun";
+import {
+	ApplicationMenu,
+	BrowserWindow,
+	Tray,
+	Updater,
+	Utils,
+} from "electrobun/bun";
 import { rpc, setMainWindow } from "./rpc";
 
 // Load native helper for window overlay on fullscreen
@@ -52,6 +58,33 @@ async function getMainViewUrl(): Promise<string> {
 
 // Hide dock icon — app runs as a menu bar agent
 Utils.setDockIconVisible(false);
+
+// Install application menu so macOS routes standard text-editing shortcuts
+// (Cmd+A/C/V/X/Z) to focused inputs via NSMenu key equivalents. Even with the
+// dock icon hidden, NSApp.mainMenu still participates in the responder chain.
+ApplicationMenu.setApplicationMenu([
+	{
+		label: "Ptolomeu",
+		submenu: [],
+	},
+	{
+		label: "Edit",
+		submenu: [
+			{ role: "undo", accelerator: "CommandOrControl+Z" },
+			{ role: "redo", accelerator: "CommandOrControl+Shift+Z" },
+			{ type: "separator" },
+			{ role: "cut", accelerator: "CommandOrControl+X" },
+			{ role: "copy", accelerator: "CommandOrControl+C" },
+			{ role: "paste", accelerator: "CommandOrControl+V" },
+			{
+				role: "pasteAndMatchStyle",
+				accelerator: "CommandOrControl+Shift+Option+V",
+			},
+			{ role: "delete" },
+			{ role: "selectAll", accelerator: "CommandOrControl+A" },
+		],
+	},
+]);
 
 // Create the main application window (hidden)
 const url = await getMainViewUrl();
