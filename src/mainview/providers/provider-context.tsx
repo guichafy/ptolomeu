@@ -16,6 +16,7 @@ interface ProviderContextValue {
 	providers: SearchProvider[];
 	activeProvider: SearchProvider;
 	activeIndex: number;
+	setIndex: (i: number) => void;
 	cycleNext: () => void;
 	cyclePrev: () => void;
 }
@@ -72,6 +73,15 @@ export function ProviderContextProvider({ children }: { children: ReactNode }) {
 		});
 	}, [providers]);
 
+	const setIndex = useCallback(
+		(i: number) => {
+			if (i < 0 || i >= providers.length) return;
+			prevProviderIdRef.current = providers[i].id;
+			setActiveIndex(i);
+		},
+		[providers],
+	);
+
 	const activeProvider = providers[activeIndex];
 	if (!activeProvider) return null;
 
@@ -81,6 +91,7 @@ export function ProviderContextProvider({ children }: { children: ReactNode }) {
 				providers,
 				activeProvider,
 				activeIndex,
+				setIndex,
 				cycleNext,
 				cyclePrev,
 			}}
