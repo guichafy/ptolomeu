@@ -30,9 +30,12 @@ export function QueryBuilderPanel({
 	onChange,
 }: Props) {
 	const [values, setValues] = useState<QualifierValues>(new Map());
-	const [activeKeys, setActiveKeys] = useState<string[]>([]);
 	const [remainder, setRemainder] = useState("");
 	const initDone = useRef(false);
+
+	// Derive activeKeys from Map (preserves insertion order)
+	const activeKeys = useMemo(() => Array.from(values.keys()), [values]);
+	const activeKeySet = useMemo(() => new Set(activeKeys), [activeKeys]);
 
 	// Initialize from existing qualifiers string
 	useEffect(() => {
@@ -42,7 +45,6 @@ export function QueryBuilderPanel({
 		if (initialQualifiers.trim()) {
 			const parsed = parseQuery(baseType, initialQualifiers);
 			setValues(parsed.values);
-			setActiveKeys(Array.from(parsed.values.keys()));
 			setRemainder(parsed.remainder);
 		}
 	}, [baseType, initialQualifiers]);
@@ -53,7 +55,6 @@ export function QueryBuilderPanel({
 		if (prevBaseType.current !== baseType) {
 			prevBaseType.current = baseType;
 			setValues(new Map());
-			setActiveKeys([]);
 			setRemainder("");
 			initDone.current = true;
 			onChange("");
@@ -83,7 +84,6 @@ export function QueryBuilderPanel({
 		const def = QUALIFIER_REGISTRY[baseType].find((d) => d.key === key);
 		if (!def) return;
 
-		setActiveKeys((prev) => [...prev, key]);
 		setValues((prev) => {
 			const next = new Map(prev);
 			next.set(key, getDefaultValue(def.type));
@@ -92,7 +92,6 @@ export function QueryBuilderPanel({
 	}
 
 	function handleRemoveQualifier(key: string) {
-		setActiveKeys((prev) => prev.filter((k) => k !== key));
 		setValues((prev) => {
 			const next = new Map(prev);
 			next.delete(key);
@@ -103,12 +102,10 @@ export function QueryBuilderPanel({
 	function handleQueryEdit(raw: string) {
 		const parsed = parseQuery(baseType, raw);
 		setValues(parsed.values);
-		setActiveKeys(Array.from(parsed.values.keys()));
 		setRemainder(parsed.remainder);
 	}
 
 	const registry = QUALIFIER_REGISTRY[baseType];
-	const activeKeySet = new Set(activeKeys);
 
 	return (
 		<div className="flex h-[360px] gap-0 rounded-md border border-border/30">
