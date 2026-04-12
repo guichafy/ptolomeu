@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { toSearchResult } from "./renderers";
+import { describe, expect, it, vi } from "vitest";
 import type { GitHubItem } from "./types";
+
+vi.mock("../rpc", () => ({
+	rpc: { request: { openUrl: vi.fn() } },
+}));
+
+const { toSearchResult } = await import("./renderers");
 
 describe("toSearchResult", () => {
 	it("repo", () => {
