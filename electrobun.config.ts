@@ -4,7 +4,7 @@ export default {
 	app: {
 		name: "ptolomeu",
 		identifier: "com.ptolomeu.app",
-		version: "1.0.0",
+		version: "1.1.0",
 	},
 	runtime: {
 		exitOnLastWindowClosed: false,

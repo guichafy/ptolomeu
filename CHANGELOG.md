@@ -1,3 +1,46 @@
+# [1.1.0](https://github.com/guichafy/ptolomeu/compare/v1.0.0...v1.1.0) (2026-04-12)
+
+
+### Bug Fixes
+
+* **github:** expand window when combobox popover opens to prevent clipping ([3f16fd3](https://github.com/guichafy/ptolomeu/commit/3f16fd3e0549fb18090aa910c648145e251a09f6))
+* **github:** raise RPC timeout to 30s and log search lifecycle ([7454cd6](https://github.com/guichafy/ptolomeu/commit/7454cd6e009864e43769af69849f43ebf9fe6107))
+* **github:** re-run search on Enter when query changed since last results ([32fe9ea](https://github.com/guichafy/ptolomeu/commit/32fe9ea94b86b5c45384ca503ded256331ef17d8))
+* import defineConfig from vitest/config for type safety ([bcb708c](https://github.com/guichafy/ptolomeu/commit/bcb708c39f4056d7198cfcc300ad8c0ac75cc735))
+* **macos:** install Edit menu to enable Cmd+A/C/V/X/Z in inputs ([53d0e39](https://github.com/guichafy/ptolomeu/commit/53d0e39e3c37dc5d393a67818d00b1d5bb08b670)), closes [#6](https://github.com/guichafy/ptolomeu/issues/6)
+* **providers:** drop generic from SearchProvider to fix registry variance ([f3775cf](https://github.com/guichafy/ptolomeu/commit/f3775cf787424992a8d2a60402ded41d36673e6f))
+* **settings:** use GitBranch icon instead of missing Github ([17d75d5](https://github.com/guichafy/ptolomeu/commit/17d75d574d4feef7a16c8b0d844f1147554c3cb2))
+* **test:** cast fetch mock through unknown for strict typecheck ([6f79a7b](https://github.com/guichafy/ptolomeu/commit/6f79a7bee654aa0711072835cb14acc0d95f439e))
+* **ui:** keep window centered when resizing by using setFrame instead of setSize ([5bf05c4](https://github.com/guichafy/ptolomeu/commit/5bf05c4c69e216cecb88388084aa5cd9069c6987))
+* **ui:** move search type combobox outside input and add Lucide icons ([edba904](https://github.com/guichafy/ptolomeu/commit/edba90441e9f2e558f96eb9132efc87e5d27d00e))
+* **ui:** prevent search results flickering by keeping previous results visible during loading ([8b3377b](https://github.com/guichafy/ptolomeu/commit/8b3377b6f3eed4eee128daf6d71337666e5e8659))
+
+
+### Features
+
+* add preferences dialog to configure active plugins ([f5339e5](https://github.com/guichafy/ptolomeu/commit/f5339e5d61fab5e24f8f0606496f705bf2ba1b09))
+* **app:** wire GitHubProvider and pass subType into search ([6260db8](https://github.com/guichafy/ptolomeu/commit/6260db82e8d2f3b87fb24c5aa6407b5aa205cea8))
+* **bun:** add github fetch handler with subType routing ([2f527c5](https://github.com/guichafy/ptolomeu/commit/2f527c556e7e6df9190ba324e97a434cd478bbc0))
+* **bun:** add github token storage via macos keychain ([e9daaf2](https://github.com/guichafy/ptolomeu/commit/e9daaf2766c54fe43af320e9769ec423d5b1356d))
+* **bun:** add team-repos cache with 5min TTL and pagination ([db29739](https://github.com/guichafy/ptolomeu/commit/db297391d947bdd97aca7a4c734aef67d232256e))
+* **github:** add api wrapper using githubFetchSearch rpc ([ed2e042](https://github.com/guichafy/ptolomeu/commit/ed2e04210bf02ca73f89ef0baaf942586ec25163))
+* **github:** add react context for subType, filters and token status ([375e6d9](https://github.com/guichafy/ptolomeu/commit/375e6d9297123c91712996295ef6ec88edd1864b))
+* **github:** add renderers mapping GitHubItem to SearchResult ([664472d](https://github.com/guichafy/ptolomeu/commit/664472d972e67cf7eaaf41f8b0506ac488335f1e))
+* **github:** add search type combobox component ([8375e17](https://github.com/guichafy/ptolomeu/commit/8375e179e0385e482e38fa95736b7b3dfaa47bac))
+* **github:** add visual query builder for custom search filters ([965df3b](https://github.com/guichafy/ptolomeu/commit/965df3b6d43a48217e3bea75492f59ca63c03f70))
+* **github:** wire combobox and cmd+1..4/cmd+f shortcuts into palette ([0baf0e8](https://github.com/guichafy/ptolomeu/commit/0baf0e85046d6389495ed8b32386a19ce763d1f4))
+* **rpc:** add openUrl RPC and use native open instead of window.open ([3a4da4f](https://github.com/guichafy/ptolomeu/commit/3a4da4f5f56640abf5efc46c0ac707dc40025cdf))
+* **rpc:** expose github token + fetch handlers on main process ([ef665b1](https://github.com/guichafy/ptolomeu/commit/ef665b1eaf6ff6869a06b9bef72057bfa9a455ce))
+* **rpc:** mirror github rpc schema and types in renderer ([b87f77e](https://github.com/guichafy/ptolomeu/commit/b87f77e75898950d8a05b8aa4ca126f6cd233746))
+* **search-input:** accept optional leftSlot for inline widgets ([f37aafc](https://github.com/guichafy/ptolomeu/commit/f37aafc10f6452ac5752d5be6941604bc29a345e))
+* **settings:** add custom filters list with create/edit/reorder ([7b583a3](https://github.com/guichafy/ptolomeu/commit/7b583a33e04c3a029e3fd16b6aee698df181a873))
+* **settings:** add custom filters state and section-aware openDialog ([422a7f5](https://github.com/guichafy/ptolomeu/commit/422a7f53b6100a297f8d7598a46c03e368822088))
+* **settings:** add github schema with custom filters validation ([8f39594](https://github.com/guichafy/ptolomeu/commit/8f39594735c781dc4dec270d85a645a0d2d9c4f8))
+* **settings:** add github tab and section-aware dialog ([a545de8](https://github.com/guichafy/ptolomeu/commit/a545de8fa1c97a98333c560384c45e3cd8066552))
+* **settings:** add token field with keychain validation flow ([0670de7](https://github.com/guichafy/ptolomeu/commit/0670de7fec04c47b77100d101920dfbc63aea405))
+* **settings:** move plugin config to hierarchical sidebar with per-provider configComponent ([2445ec3](https://github.com/guichafy/ptolomeu/commit/2445ec351fb941334ae6798ce6c7944b2d1a6c86))
+* **ui:** make mode bar tabs clickable to switch providers ([942e424](https://github.com/guichafy/ptolomeu/commit/942e424d91e0650478228cdd33f8d55dadd98ef9))
+
 # 1.0.0 (2026-04-11)
 
 
