@@ -34,6 +34,7 @@ function PaletteContent() {
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [selectedIndex, setSelectedIndex] = useState(0);
+	const [isComboboxOpen, setIsComboboxOpen] = useState(false);
 	const abortRef = useRef<AbortController | null>(null);
 	const prevProviderRef = useRef(activeProvider.id);
 
@@ -104,15 +105,15 @@ function PaletteContent() {
 		query.trim().length > 0 &&
 		(results.length > 0 || isLoading || error !== null);
 
-	// Resize native window when content appears/disappears or settings dialog toggles
+	// Resize native window when content appears/disappears, settings dialog toggles, or combobox opens
 	useEffect(() => {
 		const height = isSettingsOpen
 			? SETTINGS_HEIGHT
-			: hasContent
+			: isComboboxOpen || hasContent
 				? EXPANDED_HEIGHT
 				: COLLAPSED_HEIGHT;
 		rpc.request.resizeWindow({ height }).catch(() => {});
-	}, [hasContent, isSettingsOpen]);
+	}, [hasContent, isSettingsOpen, isComboboxOpen]);
 
 	function handleKeyDown(e: React.KeyboardEvent) {
 		if (activeProvider.id === "github" && e.metaKey) {
@@ -190,7 +191,10 @@ function PaletteContent() {
 					onChange={setQuery}
 					leftSlot={
 						activeProvider.id === "github" ? (
-							<SearchTypeCombobox ref={comboboxRef} />
+							<SearchTypeCombobox
+								ref={comboboxRef}
+								onOpenChange={setIsComboboxOpen}
+							/>
 						) : undefined
 					}
 				/>
