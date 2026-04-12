@@ -17,6 +17,8 @@ interface GitHubContextValue {
 	customFilters: CustomFilter[];
 	tokenStatus: TokenStatus;
 	refreshTokenStatus: () => Promise<void>;
+	lastSearchCached: boolean | null;
+	setLastSearchCached: (cached: boolean | null) => void;
 }
 
 const GitHubContext = createContext<GitHubContextValue | null>(null);
@@ -34,6 +36,9 @@ export function GitHubProvider({ children }: { children: ReactNode }) {
 	const [tokenStatus, setTokenStatus] = useState<TokenStatus>({
 		hasToken: false,
 	});
+	const [lastSearchCached, setLastSearchCached] = useState<boolean | null>(
+		null,
+	);
 
 	const refreshTokenStatus = useCallback(async () => {
 		try {
@@ -69,6 +74,8 @@ export function GitHubProvider({ children }: { children: ReactNode }) {
 				customFilters,
 				tokenStatus,
 				refreshTokenStatus,
+				lastSearchCached,
+				setLastSearchCached,
 			}}
 		>
 			{children}

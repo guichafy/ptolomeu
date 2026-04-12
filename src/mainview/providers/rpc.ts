@@ -101,10 +101,10 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			githubDeleteToken: { params: void; response: boolean };
 			githubFetchSearch: {
 				params: { subType: GitHubSubType; query: string };
-				response: GitHubItem[];
+				response: { items: GitHubItem[]; cached: boolean };
 			};
-			githubInvalidateTeamCache: {
-				params: { org: string; team: string };
+			githubInvalidateCache: {
+				params: void;
 				response: boolean;
 			};
 		};

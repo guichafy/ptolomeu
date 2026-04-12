@@ -8,18 +8,6 @@ export interface TeamRepo {
 	url: string;
 }
 
-interface CacheEntry {
-	fetchedAt: number;
-	repos: TeamRepo[];
-}
-
-const TTL_MS = 5 * 60 * 1000;
-const cache = new Map<string, CacheEntry>();
-
-function cacheKey(org: string, team: string): string {
-	return `${org}/${team}`;
-}
-
 interface GithubTeamRepo {
 	id: number;
 	name: string;
@@ -40,7 +28,7 @@ function parseNextUrl(linkHeader: string | null): string | null {
 	return null;
 }
 
-async function fetchAllTeamRepos(
+export async function fetchAllTeamRepos(
 	org: string,
 	team: string,
 	token: string | null,
@@ -77,34 +65,12 @@ async function fetchAllTeamRepos(
 	return all;
 }
 
-export async function getFiltered(
-	org: string,
-	team: string,
-	query: string,
-	token: string | null,
-): Promise<TeamRepo[]> {
-	const key = cacheKey(org, team);
-	let entry = cache.get(key);
-	if (!entry || Date.now() - entry.fetchedAt > TTL_MS) {
-		entry = {
-			fetchedAt: Date.now(),
-			repos: await fetchAllTeamRepos(org, team, token),
-		};
-		cache.set(key, entry);
-	}
+export function filterTeamRepos(repos: TeamRepo[], query: string): TeamRepo[] {
 	const q = query.trim().toLowerCase();
-	if (!q) return entry.repos;
-	return entry.repos.filter(
+	if (!q) return repos;
+	return repos.filter(
 		(r) =>
 			r.name.toLowerCase().includes(q) ||
 			(r.description?.toLowerCase().includes(q) ?? false),
 	);
-}
-
-export function invalidate(org: string, team: string): void {
-	cache.delete(cacheKey(org, team));
-}
-
-export function _resetCache(): void {
-	cache.clear();
 }

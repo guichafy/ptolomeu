@@ -1,6 +1,11 @@
 import { getToken } from "../github-token";
 import type { CustomFilter, GitHubSearchType } from "../settings";
-import { getFiltered as getTeamReposFiltered } from "./team-repos-cache";
+import { getCached, setCached } from "./search-cache";
+import {
+	fetchAllTeamRepos,
+	filterTeamRepos,
+	type TeamRepo,
+} from "./team-repos-cache";
 
 export type GitHubSubType =
 	| { kind: "native"; type: GitHubSearchType }
@@ -187,11 +192,25 @@ async function fetchNative(
 	}
 }
 
-export async function githubFetchSearch(
-	args: FetchArgs,
+function teamReposToItems(repos: TeamRepo[]): GitHubItem[] {
+	return repos.map(
+		(r): GitHubItem => ({
+			kind: "repo",
+			id: r.id,
+			fullName: r.fullName,
+			description: r.description,
+			stars: r.stars,
+			language: r.language,
+			url: r.url,
+		}),
+	);
+}
+
+async function fetchFromNetwork(
+	subType: GitHubSubType,
+	query: string,
+	token: string | null,
 ): Promise<GitHubItem[]> {
-	const token = await getToken();
-	const { subType, query } = args;
 	if (subType.kind === "native") {
 		return fetchNative(subType.type, query, token);
 	}
@@ -200,19 +219,23 @@ export async function githubFetchSearch(
 		const combined = [filter.qualifiers, query].filter(Boolean).join(" ");
 		return fetchNative(filter.baseType, combined, token);
 	}
-	const repos = await getTeamReposFiltered(
-		filter.org,
-		filter.team,
-		query,
-		token,
-	);
-	return repos.map((r) => ({
-		kind: "repo",
-		id: r.id,
-		fullName: r.fullName,
-		description: r.description,
-		stars: r.stars,
-		language: r.language,
-		url: r.url,
-	}));
+	const all = await fetchAllTeamRepos(filter.org, filter.team, token);
+	return teamReposToItems(filterTeamRepos(all, query));
+}
+
+export interface FetchResult {
+	items: GitHubItem[];
+	cached: boolean;
+}
+
+export async function githubFetchSearch(args: FetchArgs): Promise<FetchResult> {
+	const { subType, query } = args;
+	const cached = getCached(subType, query);
+	if (cached) {
+		return { items: cached, cached: true };
+	}
+	const token = await getToken();
+	const items = await fetchFromNetwork(subType, query, token);
+	setCached(subType, query, items);
+	return { items, cached: false };
 }

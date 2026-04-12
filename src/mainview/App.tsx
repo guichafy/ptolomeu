@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CalculatorResult } from "./components/calculator-result";
 import { ModeBar } from "./components/mode-bar";
@@ -24,10 +24,21 @@ const SETTINGS_HEIGHT = 480;
 
 function PaletteContent() {
 	const { activeProvider, cycleNext, cyclePrev } = useProvider();
-	const { activeSubType, setSubType, customFilters } = useGitHub();
+	const {
+		activeSubType,
+		setSubType,
+		customFilters,
+		setLastSearchCached,
+		lastSearchCached,
+	} = useGitHub();
 	const comboboxRef = useRef<SearchTypeComboboxHandle>(null);
-	const providerContext =
-		activeProvider.id === "github" ? activeSubType : undefined;
+	const providerContext = useMemo(
+		() =>
+			activeProvider.id === "github"
+				? { subType: activeSubType, onCacheStatus: setLastSearchCached }
+				: undefined,
+		[activeProvider.id, activeSubType, setLastSearchCached],
+	);
 	const { isOpen: isSettingsOpen } = useSettings();
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState<SearchResult[]>([]);
@@ -45,9 +56,19 @@ function PaletteContent() {
 			setResults([]);
 			setError(null);
 			setSelectedIndex(0);
+			setLastSearchCached(null);
 			prevProviderRef.current = activeProvider.id;
 		}
-	}, [activeProvider.id]);
+	}, [activeProvider.id, setLastSearchCached]);
+
+	// Reset cache indicator when the user starts typing a new query
+	const handleQueryChange = useCallback(
+		(next: string) => {
+			setQuery(next);
+			setLastSearchCached(null);
+		},
+		[setLastSearchCached],
+	);
 
 	const handleSearch = useCallback(async () => {
 		abortRef.current?.abort();
@@ -188,7 +209,7 @@ function PaletteContent() {
 				<SearchInput
 					placeholder={activeProvider.placeholder}
 					value={query}
-					onChange={setQuery}
+					onChange={handleQueryChange}
 					leftSlot={
 						activeProvider.id === "github" ? (
 							<SearchTypeCombobox
@@ -251,6 +272,12 @@ function PaletteContent() {
 					<span className="text-[10px] text-muted-foreground/60">
 						↑↓ navegar
 					</span>
+					{activeProvider.id === "github" && lastSearchCached === true && (
+						<span className="text-[10px] text-amber-300/80">⚡ cache</span>
+					)}
+					{activeProvider.id === "github" && lastSearchCached === false && (
+						<span className="text-[10px] text-blue-300/70">🌐 rede</span>
+					)}
 					<span className="text-[10px] text-muted-foreground/60">
 						{isCalc ? "↵ copiar" : "↵ abrir"} · esc fechar
 					</span>

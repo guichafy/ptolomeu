@@ -1,25 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	_resetCache,
-	getFiltered,
-	invalidate,
+	fetchAllTeamRepos,
+	filterTeamRepos,
 	type TeamRepo,
 } from "./team-repos-cache";
 
 const originalFetch = globalThis.fetch;
 
-beforeEach(() => {
-	_resetCache();
-	vi.useFakeTimers();
-});
-
 afterEach(() => {
 	globalThis.fetch = originalFetch;
-	vi.useRealTimers();
+	vi.restoreAllMocks();
 });
 
-describe("team-repos-cache", () => {
-	it("busca e cacheia repos do endpoint team", async () => {
+describe("fetchAllTeamRepos", () => {
+	it("normaliza payload do endpoint team", async () => {
 		const fetchMock = vi.fn(async (url: string | URL) => {
 			expect(String(url)).toContain("/orgs/Chafy-Studio/teams/chafy/repos");
 			return new Response(
@@ -38,127 +32,10 @@ describe("team-repos-cache", () => {
 			);
 		});
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
-		const results = await getFiltered("Chafy-Studio", "chafy", "", "tok");
+		const results = await fetchAllTeamRepos("Chafy-Studio", "chafy", "tok");
 		expect(results).toHaveLength(1);
 		expect(results[0].name).toBe("ptolomeu");
-		expect(fetchMock).toHaveBeenCalledTimes(1);
-	});
-
-	it("reaproveita cache dentro do TTL", async () => {
-		const fetchMock = vi.fn(
-			async () =>
-				new Response(
-					JSON.stringify([
-						{
-							id: 1,
-							name: "a",
-							full_name: "o/a",
-							description: null,
-							stargazers_count: 0,
-							language: null,
-							html_url: "",
-						},
-					]),
-					{ status: 200, headers: { Link: "" } },
-				),
-		);
-		globalThis.fetch = fetchMock as unknown as typeof fetch;
-		await getFiltered("o", "t", "", "tok");
-		await getFiltered("o", "t", "", "tok");
-		expect(fetchMock).toHaveBeenCalledTimes(1);
-	});
-
-	it("expira após 5 minutos e refaz fetch", async () => {
-		const fetchMock = vi.fn(
-			async () =>
-				new Response(
-					JSON.stringify([
-						{
-							id: 1,
-							name: "a",
-							full_name: "o/a",
-							description: null,
-							stargazers_count: 0,
-							language: null,
-							html_url: "",
-						},
-					]),
-					{ status: 200, headers: { Link: "" } },
-				),
-		);
-		globalThis.fetch = fetchMock as unknown as typeof fetch;
-		await getFiltered("o", "t", "", "tok");
-		vi.advanceTimersByTime(5 * 60 * 1000 + 1);
-		await getFiltered("o", "t", "", "tok");
-		expect(fetchMock).toHaveBeenCalledTimes(2);
-	});
-
-	it("filtra por query case-insensitive em name e description", async () => {
-		globalThis.fetch = vi.fn(
-			async () =>
-				new Response(
-					JSON.stringify([
-						{
-							id: 1,
-							name: "ptolomeu",
-							full_name: "o/ptolomeu",
-							description: "menu BAR",
-							stargazers_count: 0,
-							language: null,
-							html_url: "",
-						},
-						{
-							id: 2,
-							name: "other",
-							full_name: "o/other",
-							description: "not relevant",
-							stargazers_count: 0,
-							language: null,
-							html_url: "",
-						},
-						{
-							id: 3,
-							name: "bar-service",
-							full_name: "o/bar-service",
-							description: null,
-							stargazers_count: 0,
-							language: null,
-							html_url: "",
-						},
-					]),
-					{ status: 200, headers: { Link: "" } },
-				),
-		) as unknown as typeof fetch;
-		const results = await getFiltered("o", "t", "bar", "tok");
-		expect(results.map((r: TeamRepo) => r.name).sort()).toEqual([
-			"bar-service",
-			"ptolomeu",
-		]);
-	});
-
-	it("invalidate força refetch na próxima chamada", async () => {
-		const fetchMock = vi.fn(
-			async () =>
-				new Response(
-					JSON.stringify([
-						{
-							id: 1,
-							name: "a",
-							full_name: "o/a",
-							description: null,
-							stargazers_count: 0,
-							language: null,
-							html_url: "",
-						},
-					]),
-					{ status: 200, headers: { Link: "" } },
-				),
-		);
-		globalThis.fetch = fetchMock as unknown as typeof fetch;
-		await getFiltered("o", "t", "", "tok");
-		invalidate("o", "t");
-		await getFiltered("o", "t", "", "tok");
-		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(results[0].fullName).toBe("Chafy-Studio/ptolomeu");
 	});
 
 	it("inclui Authorization quando token fornecido", async () => {
@@ -171,6 +48,67 @@ describe("team-repos-cache", () => {
 			});
 		});
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
-		await getFiltered("o", "t", "", "tok123");
+		await fetchAllTeamRepos("o", "t", "tok123");
+	});
+
+	it("omite Authorization quando token é null", async () => {
+		const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+			const headers = new Headers(init?.headers);
+			expect(headers.get("Authorization")).toBeNull();
+			return new Response(JSON.stringify([]), {
+				status: 200,
+				headers: { Link: "" },
+			});
+		});
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		await fetchAllTeamRepos("o", "t", null);
+	});
+});
+
+describe("filterTeamRepos", () => {
+	const sample: TeamRepo[] = [
+		{
+			id: 1,
+			name: "ptolomeu",
+			fullName: "o/ptolomeu",
+			description: "menu BAR",
+			stars: 0,
+			language: null,
+			url: "",
+		},
+		{
+			id: 2,
+			name: "other",
+			fullName: "o/other",
+			description: "not relevant",
+			stars: 0,
+			language: null,
+			url: "",
+		},
+		{
+			id: 3,
+			name: "bar-service",
+			fullName: "o/bar-service",
+			description: null,
+			stars: 0,
+			language: null,
+			url: "",
+		},
+	];
+
+	it("retorna tudo quando query vazia", () => {
+		expect(filterTeamRepos(sample, "")).toHaveLength(3);
+	});
+
+	it("filtra por name e description case-insensitive", () => {
+		const matches = filterTeamRepos(sample, "bar");
+		expect(matches.map((r: TeamRepo) => r.name).sort()).toEqual([
+			"bar-service",
+			"ptolomeu",
+		]);
+	});
+
+	it("retorna vazio quando nada bate", () => {
+		expect(filterTeamRepos(sample, "zzz")).toEqual([]);
 	});
 });

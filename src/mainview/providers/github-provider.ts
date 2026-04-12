@@ -16,15 +16,29 @@ function GithubIcon(props: React.SVGProps<SVGSVGElement>) {
 
 const DEFAULT_SUBTYPE: GitHubSubType = { kind: "native", type: "repos" };
 
+interface GithubProviderContext {
+	subType: GitHubSubType;
+	onCacheStatus: (cached: boolean) => void;
+}
+
 export const githubProvider: SearchProvider = {
 	id: "github",
 	label: "GitHub",
 	icon: GithubIcon,
 	placeholder: "Buscar no GitHub...",
-	useSearchContext: () => useGitHub().activeSubType,
+	useSearchContext: () => {
+		const { activeSubType, setLastSearchCached } = useGitHub();
+		return {
+			subType: activeSubType,
+			onCacheStatus: setLastSearchCached,
+		} satisfies GithubProviderContext;
+	},
 	search: async (query, signal, context) => {
 		if (!query.trim()) return [];
-		const subType = (context as GitHubSubType | undefined) ?? DEFAULT_SUBTYPE;
-		return githubSearch(query, subType, signal);
+		const ctx = context as GithubProviderContext | undefined;
+		const subType = ctx?.subType ?? DEFAULT_SUBTYPE;
+		return githubSearch(query, subType, signal, {
+			onCacheStatus: ctx?.onCacheStatus,
+		});
 	},
 };
