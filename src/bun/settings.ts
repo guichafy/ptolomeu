@@ -30,17 +30,28 @@ export interface GitHubSettings {
 	hasToken: boolean;
 }
 
+export interface AnalyticsSettings {
+	consentGiven: boolean;
+	anonymousId: string;
+}
+
 export interface Settings {
 	version: 1;
 	plugins: {
 		enabledOrder: string[];
 	};
 	github: GitHubSettings;
+	analytics: AnalyticsSettings;
 }
 
 export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
 	customFilters: [],
 	hasToken: false,
+};
+
+export const DEFAULT_ANALYTICS_SETTINGS: AnalyticsSettings = {
+	consentGiven: false,
+	anonymousId: crypto.randomUUID(),
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -49,6 +60,7 @@ const DEFAULT_SETTINGS: Settings = {
 		enabledOrder: ["apps", "github", "calc", "web"],
 	},
 	github: DEFAULT_GITHUB_SETTINGS,
+	analytics: DEFAULT_ANALYTICS_SETTINGS,
 };
 
 const MIN_ACTIVE = 1;
@@ -125,12 +137,30 @@ export function validateSettings(value: unknown): ValidateResult {
 	}
 	const github = validateGithub((s as Record<string, unknown>).github);
 	if (!github) return { ok: false };
+	const raw = (s as Record<string, unknown>).analytics;
+	let analytics: AnalyticsSettings;
+	if (
+		raw &&
+		typeof raw === "object" &&
+		typeof (raw as Record<string, unknown>).consentGiven === "boolean" &&
+		typeof (raw as Record<string, unknown>).anonymousId === "string" &&
+		(raw as Record<string, unknown>).anonymousId
+	) {
+		const a = raw as Record<string, unknown>;
+		analytics = {
+			consentGiven: a.consentGiven as boolean,
+			anonymousId: a.anonymousId as string,
+		};
+	} else {
+		analytics = { consentGiven: false, anonymousId: crypto.randomUUID() };
+	}
 	return {
 		ok: true,
 		value: {
 			version: 1,
 			plugins: { enabledOrder: order as string[] },
 			github,
+			analytics,
 		},
 	};
 }
