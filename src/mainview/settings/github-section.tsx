@@ -1,3 +1,4 @@
+import { CustomFiltersList } from "./custom-filters-list";
 import { TokenField } from "./token-field";
 
 export function GitHubSection() {
@@ -10,6 +11,7 @@ export function GitHubSection() {
 				</p>
 			</div>
 			<TokenField />
+			<CustomFiltersList />
 		</div>
 	);
 }
