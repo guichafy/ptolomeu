@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { initRendererAnalytics, shutdownRendererAnalytics } from "./analytics";
 import { CalculatorResult } from "./components/calculator-result";
 import { ModeBar } from "./components/mode-bar";
 import { ResultItem } from "./components/result-item";
@@ -291,9 +292,24 @@ function PaletteContent() {
 	);
 }
 
+function AnalyticsInitializer() {
+	const { analyticsSettings } = useSettings();
+
+	useEffect(() => {
+		if (analyticsSettings.consentGiven && analyticsSettings.anonymousId) {
+			initRendererAnalytics(analyticsSettings.anonymousId);
+		} else {
+			shutdownRendererAnalytics();
+		}
+	}, [analyticsSettings.consentGiven, analyticsSettings.anonymousId]);
+
+	return null;
+}
+
 function App() {
 	return (
 		<SettingsProvider>
+			<AnalyticsInitializer />
 			<ProviderContextProvider>
 				<GitHubProvider>
 					<PaletteContent />

@@ -25,12 +25,18 @@ export interface GitHubSettings {
 	hasToken: boolean;
 }
 
+export interface AnalyticsSettings {
+	consentGiven: boolean;
+	anonymousId: string;
+}
+
 export interface Settings {
 	version: 1;
 	plugins: {
 		enabledOrder: string[];
 	};
 	github: GitHubSettings;
+	analytics: AnalyticsSettings;
 }
 
 export type GitHubSubType =
@@ -106,6 +112,14 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			githubInvalidateCache: {
 				params: void;
+				response: boolean;
+			};
+			trackAnalyticsEvent: {
+				params: { event: string; properties?: Record<string, unknown> };
+				response: boolean;
+			};
+			setAnalyticsConsent: {
+				params: { consentGiven: boolean };
 				response: boolean;
 			};
 		};

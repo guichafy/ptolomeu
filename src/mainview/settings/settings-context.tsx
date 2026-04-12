@@ -9,6 +9,7 @@ import {
 } from "react";
 import { KNOWN_PLUGIN_IDS } from "../providers/registry";
 import {
+	type AnalyticsSettings,
 	type CustomFilter,
 	rpc,
 	type Settings,
@@ -22,6 +23,8 @@ interface SettingsContextValue {
 	updateEnabledOrder: (next: string[]) => void;
 	customFilters: CustomFilter[];
 	updateCustomFilters: (next: CustomFilter[]) => void;
+	analyticsSettings: AnalyticsSettings;
+	updateAnalyticsConsent: (consentGiven: boolean) => void;
 	isOpen: boolean;
 	initialSection: SettingsSection | null;
 	openDialog: (section?: SettingsSection) => void;
@@ -37,6 +40,11 @@ const MAX_ACTIVE = 5;
 const DEFAULT_GITHUB = {
 	customFilters: [] as CustomFilter[],
 	hasToken: false,
+};
+
+const DEFAULT_ANALYTICS: AnalyticsSettings = {
+	consentGiven: false,
+	anonymousId: "",
 };
 
 function sanitizeOrder(order: string[]): string[] {
@@ -68,6 +76,7 @@ function normalizeSettings(loaded: Settings): Settings {
 			enabledOrder: sanitizeOrder(loaded.plugins.enabledOrder),
 		},
 		github: loaded.github ?? DEFAULT_GITHUB,
+		analytics: loaded.analytics ?? DEFAULT_ANALYTICS,
 	};
 }
 
@@ -92,6 +101,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 						version: 1,
 						plugins: { enabledOrder: [...KNOWN_PLUGIN_IDS] },
 						github: DEFAULT_GITHUB,
+						analytics: DEFAULT_ANALYTICS,
 					});
 				}
 			});
@@ -123,6 +133,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 					version: 1 as const,
 					plugins: { enabledOrder: clean },
 					github: DEFAULT_GITHUB,
+					analytics: DEFAULT_ANALYTICS,
 				};
 				const updated: Settings = {
 					...base,
@@ -142,12 +153,34 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 					version: 1 as const,
 					plugins: { enabledOrder: [...KNOWN_PLUGIN_IDS] },
 					github: DEFAULT_GITHUB,
+					analytics: DEFAULT_ANALYTICS,
 				};
 				const updated: Settings = {
 					...base,
 					github: { ...base.github, customFilters: next },
 				};
 				scheduleSave(updated);
+				return updated;
+			});
+		},
+		[scheduleSave],
+	);
+
+	const updateAnalyticsConsent = useCallback(
+		(consentGiven: boolean) => {
+			setSettings((prev) => {
+				const base = prev ?? {
+					version: 1 as const,
+					plugins: { enabledOrder: [...KNOWN_PLUGIN_IDS] },
+					github: DEFAULT_GITHUB,
+					analytics: DEFAULT_ANALYTICS,
+				};
+				const updated: Settings = {
+					...base,
+					analytics: { ...base.analytics, consentGiven },
+				};
+				scheduleSave(updated);
+				rpc.request.setAnalyticsConsent({ consentGiven }).catch(() => {});
 				return updated;
 			});
 		},
@@ -165,6 +198,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
 	const enabledOrder = settings?.plugins.enabledOrder ?? [];
 	const customFilters = settings?.github.customFilters ?? [];
+	const analyticsSettings = settings?.analytics ?? DEFAULT_ANALYTICS;
 
 	return (
 		<SettingsContext.Provider
@@ -174,6 +208,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 				updateEnabledOrder,
 				customFilters,
 				updateCustomFilters,
+				analyticsSettings,
+				updateAnalyticsConsent,
 				isOpen,
 				initialSection,
 				openDialog,

@@ -2,6 +2,7 @@ import { readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { defineElectrobunRPC, type ElectrobunRPCSchema } from "electrobun/bun";
+import { setAnalyticsEnabled, trackEvent } from "./analytics";
 import {
 	type GitHubItem,
 	type GitHubSubType,
@@ -47,6 +48,14 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			githubInvalidateCache: {
 				params: void;
+				response: boolean;
+			};
+			trackAnalyticsEvent: {
+				params: { event: string; properties?: Record<string, unknown> };
+				response: boolean;
+			};
+			setAnalyticsConsent: {
+				params: { consentGiven: boolean };
 				response: boolean;
 			};
 		};
@@ -284,6 +293,14 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 			},
 			githubInvalidateCache: async () => {
 				invalidateSearchCache();
+				return true;
+			},
+			trackAnalyticsEvent: async ({ event, properties }) => {
+				trackEvent(event, properties);
+				return true;
+			},
+			setAnalyticsConsent: async ({ consentGiven }) => {
+				setAnalyticsEnabled(consentGiven);
 				return true;
 			},
 		},

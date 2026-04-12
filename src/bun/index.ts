@@ -7,7 +7,9 @@ import {
 	Updater,
 	Utils,
 } from "electrobun/bun";
+import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics";
 import { rpc, setMainWindow } from "./rpc";
+import { loadSettings } from "./settings";
 
 // Load native helper for window overlay on fullscreen
 // import.meta.dir points to Resources/app/bun/ in the bundle
@@ -112,6 +114,11 @@ const mainWindow = new BrowserWindow({
 
 setMainWindow(mainWindow);
 
+// Initialize analytics (respects user consent)
+const settings = await loadSettings();
+initAnalytics(settings.analytics);
+trackEvent("app_launched", { version: "1.2.0" });
+
 // Create system tray with app icon
 const trayIconPath = join(import.meta.dir, "..", "native", "tray-icon.png");
 const tray = new Tray({
@@ -138,8 +145,11 @@ tray.on("tray-clicked", (event: any) => {
 		overlayLib.symbols.makeWindowOverlay(mainWindow.ptr);
 		rpc.send.openPreferences({});
 	} else if (action === "quit") {
-		tray.remove();
-		overlayLib.symbols.quitApp();
+		trackEvent("app_quit");
+		shutdownAnalytics().finally(() => {
+			tray.remove();
+			overlayLib.symbols.quitApp();
+		});
 	}
 });
 
