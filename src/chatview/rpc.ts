@@ -214,26 +214,46 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 	};
 }
 
-let openPreferencesHandler:
-	| ((args: { section?: SettingsSection }) => void)
+let streamChunkHandler:
+	| ((args: { sessionId: string; chunk: unknown }) => void)
+	| null = null;
+let streamEndHandler:
+	| ((args: {
+			sessionId: string;
+			result: { subtype: string; result?: string };
+	  }) => void)
+	| null = null;
+let streamErrorHandler:
+	| ((args: { sessionId: string; error: string }) => void)
 	| null = null;
 
-export function setOpenPreferencesHandler(
-	handler: ((args: { section?: SettingsSection }) => void) | null,
-) {
-	openPreferencesHandler = handler;
+export function setStreamHandlers(handlers: {
+	onChunk: (args: { sessionId: string; chunk: unknown }) => void;
+	onEnd: (args: {
+		sessionId: string;
+		result: { subtype: string; result?: string };
+	}) => void;
+	onError: (args: { sessionId: string; error: string }) => void;
+}) {
+	streamChunkHandler = handlers.onChunk;
+	streamEndHandler = handlers.onEnd;
+	streamErrorHandler = handlers.onError;
 }
 
 const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
-	maxRequestTime: 30_000,
+	maxRequestTime: 60_000,
 	handlers: {
 		messages: {
-			openPreferences: (args) => {
-				openPreferencesHandler?.(args ?? {});
+			openPreferences: () => {},
+			claudeStreamChunk: (args) => {
+				streamChunkHandler?.(args);
 			},
-			claudeStreamChunk: () => {},
-			claudeStreamEnd: () => {},
-			claudeStreamError: () => {},
+			claudeStreamEnd: (args) => {
+				streamEndHandler?.(args);
+			},
+			claudeStreamError: (args) => {
+				streamErrorHandler?.(args);
+			},
 		},
 	},
 });

@@ -4,6 +4,27 @@ import { join } from "node:path";
 import { defineElectrobunRPC, type ElectrobunRPCSchema } from "electrobun/bun";
 import { setAnalyticsEnabled, trackEvent } from "./analytics";
 import {
+	type BedrockConfig,
+	type ClaudeAuthStatus,
+	getBedrockConfig,
+	getClaudeAuthStatus,
+	loginAnthropicSSO,
+	logoutAnthropicSSO,
+	setBedrockConfig,
+} from "./claude/auth";
+import {
+	createSession as claudeCreateSession,
+	deleteSession as claudeDeleteSession,
+	getSessionMessages as claudeGetSessionMessages,
+	listSessions as claudeListSessions,
+	resumeSession as claudeResumeSession,
+	sendMessage as claudeSendMessage,
+	setSender as claudeSetSender,
+	stopGeneration as claudeStopGeneration,
+	type SessionMeta,
+	type StoredMessage,
+} from "./claude/session-manager";
+import {
 	type GitHubItem,
 	type GitHubSubType,
 	githubFetchSearch,
@@ -58,6 +79,37 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				params: { consentGiven: boolean };
 				response: boolean;
 			};
+			claudeListSessions: { params: void; response: SessionMeta[] };
+			claudeCreateSession: {
+				params: { prompt: string; cwd?: string };
+				response: { sessionId: string };
+			};
+			claudeResumeSession: {
+				params: { sessionId: string };
+				response: boolean;
+			};
+			claudeSendMessage: { params: { message: string }; response: void };
+			claudeStopGeneration: { params: void; response: boolean };
+			claudeDeleteSession: {
+				params: { sessionId: string };
+				response: boolean;
+			};
+			claudeGetSessionMessages: {
+				params: { sessionId: string };
+				response: StoredMessage[];
+			};
+			claudeGetAuthStatus: { params: void; response: ClaudeAuthStatus };
+			claudeLoginSSO: {
+				params: void;
+				response: { ok: boolean; error?: string };
+			};
+			claudeLogoutSSO: { params: void; response: boolean };
+			claudeSetBedrock: { params: BedrockConfig; response: boolean };
+			claudeGetBedrock: { params: void; response: BedrockConfig | null };
+			claudeOpenChat: {
+				params: { sessionId?: string };
+				response: boolean;
+			};
 		};
 		messages: {};
 	};
@@ -65,8 +117,20 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 		requests: {};
 		messages: {
 			openPreferences: { section?: SettingsSection };
+			claudeStreamChunk: { sessionId: string; chunk: unknown };
+			claudeStreamEnd: {
+				sessionId: string;
+				result: { subtype: string; result?: string };
+			};
+			claudeStreamError: { sessionId: string; error: string };
 		};
 	};
+}
+
+// Callback for opening chat window (set from index.ts)
+let openChatCallback: ((sessionId?: string) => void) | null = null;
+export function setOpenChatCallback(cb: (sessionId?: string) => void) {
+	openChatCallback = cb;
 }
 
 // Window reference for resize handler (set from index.ts)
@@ -303,6 +367,47 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 				setAnalyticsEnabled(consentGiven);
 				return true;
 			},
+			claudeListSessions: async () => claudeListSessions(),
+			claudeCreateSession: async ({ prompt, cwd }) => {
+				console.log("[rpc] claudeCreateSession called, prompt:", prompt);
+				try {
+					const sessionId = await claudeCreateSession(prompt, cwd);
+					console.log("[rpc] claudeCreateSession success:", sessionId);
+					return { sessionId };
+				} catch (err) {
+					console.error("[rpc] claudeCreateSession FAILED:", err);
+					throw err;
+				}
+			},
+			claudeResumeSession: async ({ sessionId }) =>
+				claudeResumeSession(sessionId),
+			claudeSendMessage: async ({ message }) => {
+				await claudeSendMessage(message);
+			},
+			claudeStopGeneration: async () => claudeStopGeneration(),
+			claudeDeleteSession: async ({ sessionId }) =>
+				claudeDeleteSession(sessionId),
+			claudeGetSessionMessages: async ({ sessionId }) =>
+				claudeGetSessionMessages(sessionId),
+			claudeGetAuthStatus: async () => getClaudeAuthStatus(),
+			claudeLoginSSO: async () => loginAnthropicSSO(),
+			claudeLogoutSSO: async () => logoutAnthropicSSO(),
+			claudeSetBedrock: async (config) => setBedrockConfig(config),
+			claudeGetBedrock: async () => getBedrockConfig(),
+			claudeOpenChat: async ({ sessionId }) => {
+				openChatCallback?.(sessionId);
+				return true;
+			},
 		},
 	},
+});
+
+// Wire the streaming sender so session-manager can push stream events to the renderer
+claudeSetSender({
+	sendChunk: (sessionId, chunk) =>
+		rpc.send.claudeStreamChunk({ sessionId, chunk }),
+	sendEnd: (sessionId, result) =>
+		rpc.send.claudeStreamEnd({ sessionId, result }),
+	sendError: (sessionId, error) =>
+		rpc.send.claudeStreamError({ sessionId, error }),
 });

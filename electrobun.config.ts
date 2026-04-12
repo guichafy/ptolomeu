@@ -14,11 +14,13 @@ export default {
 		copy: {
 			"dist/index.html": "views/mainview/index.html",
 			"dist/assets": "views/mainview/assets",
+			"dist-chat/index.html": "views/chatview/index.html",
+			"dist-chat/assets": "views/chatview/assets",
 			"src/bun/native/liboverlay.dylib": "native/liboverlay.dylib",
 			"src/bun/tray-icon.png": "native/tray-icon.png",
 		},
 		// Ignore Vite output in watch mode — HMR handles view rebuilds separately
-		watchIgnore: ["dist/**"],
+		watchIgnore: ["dist/**", "dist-chat/**"],
 		mac: {
 			bundleCEF: false,
 			icons: "ptolomeu.iconset",
