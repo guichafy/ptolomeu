@@ -6,6 +6,7 @@ import {
 	User,
 } from "lucide-react";
 import { createElement } from "react";
+import { rpc } from "../rpc";
 import type { SearchResult } from "../types";
 import type { GitHubItem } from "./types";
 
@@ -15,7 +16,7 @@ function formatStars(count: number): string {
 }
 
 function openUrl(url: string) {
-	window.open(url, "_blank");
+	rpc.request.openUrl({ url });
 }
 
 export function toSearchResult(item: GitHubItem): SearchResult {
