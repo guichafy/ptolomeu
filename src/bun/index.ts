@@ -112,12 +112,14 @@ const mainWindow = new BrowserWindow({
 
 setMainWindow(mainWindow);
 
-// Create system tray
+// Create system tray with app icon
+const trayIconPath = join(import.meta.dir, "..", "native", "tray-icon.png");
 const tray = new Tray({
 	title: "Ptolomeu",
+	image: trayIconPath,
 	template: false,
-	width: 48,
-	height: 48,
+	width: 22,
+	height: 22,
 });
 
 tray.setMenu([
