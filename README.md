@@ -1,118 +1,203 @@
 # Ptolomeu
 
-App de menu bar para macOS que permite buscar repositórios no GitHub diretamente da barra de menus. Construído com [Electrobun](https://electrobun.dev/) (runtime Bun), React 18, Tailwind CSS 4 e Vite.
+Your daily tools, orbiting you. A macOS menu bar command center for software engineers.
 
-## Funcionalidades
+Ptolomeu is a menu bar app for macOS built with [Electrobun](https://electrobun.dev/) (Bun runtime) and React. It provides a global command palette (`⌘+Shift+Space`) extensible via a plugin system — each plugin is a provider that adds a new capability. Ships with 5 built-in plugins.
 
-- Busca de repositórios GitHub via command palette (cmdk)
-- Vive exclusivamente na barra de menus (sem ícone no Dock)
-- Atalho global **⌘ + Shift + Space** para abrir/fechar
-- Janela overlay em tela cheia com delegate nativo que esconde ao fechar
-- Splash screen na inicialização
-- Interface em português (pt-BR)
-
-## Pré-requisitos
-
-- macOS (arm64)
-- [Bun](https://bun.sh/) instalado
-- Xcode Command Line Tools (para compilar a dylib nativa)
-
-## Instalação
+## Quick Start
 
 ```bash
+# Prerequisites: macOS (arm64), Bun, Xcode Command Line Tools
 bun install
-```
-
-## Desenvolvimento
-
-```bash
-# Recomendado — Vite HMR + Electrobun rodando juntos
 bun run dev:hmr
-
-# Sem HMR (builda assets e observa mudanças)
-bun run dev
-
-# Build completo + executa (sem watch)
-bun run start
 ```
 
-## Build
+## Built-in Plugins
+
+| Plugin | Description |
+|--------|-------------|
+| **GitHub** | Search repos, code, issues, users. Custom filters, qualifier builder, team repos. |
+| **Apps** | Launch macOS applications from the palette. |
+| **Calculator** | Evaluate math expressions inline. |
+| **Web Search** | Quick access to Google, DuckDuckGo, StackOverflow, YouTube. |
+| **Claude AI** | Chat with Claude — streaming responses, session persistence, dedicated window. |
+
+## Plugin System
+
+Every plugin implements the `SearchProvider` interface:
+
+```typescript
+interface SearchProvider {
+  id: string;
+  label: string;
+  icon: IconComponent;
+  placeholder: string;
+  search(query: string, signal?: AbortSignal, context?: unknown): Promise<SearchResult[]>;
+  useSearchContext?: () => unknown;   // optional reactive context
+  configComponent?: ComponentType;    // optional settings UI
+}
+```
+
+Results returned by `search()`:
+
+```typescript
+interface SearchResult {
+  id: string;
+  title: string;
+  subtitle?: string;
+  icon?: ReactNode;
+  badge?: string;
+  onSelect: () => void;
+}
+```
+
+### Creating a Plugin
+
+```typescript
+// src/mainview/providers/npm-provider.ts
+import { Package } from "lucide-react";
+import type { SearchProvider } from "./types";
+
+export const npmProvider: SearchProvider = {
+  id: "npm",
+  label: "npm",
+  icon: Package,
+  placeholder: "Search npm packages...",
+
+  async search(query) {
+    if (!query) return [];
+    const res = await fetch(
+      `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(query)}&size=10`
+    );
+    const data = await res.json();
+    return data.objects.map((obj: any) => ({
+      id: obj.package.name,
+      title: obj.package.name,
+      subtitle: obj.package.description,
+      badge: obj.package.version,
+      onSelect: () => window.open(`https://npmjs.com/package/${obj.package.name}`),
+    }));
+  },
+};
+```
+
+Register it in `src/mainview/providers/registry.ts`:
+
+```typescript
+import { npmProvider } from "./npm-provider";
+
+export const PLUGIN_REGISTRY: Record<string, SearchProvider> = {
+  // ... existing plugins
+  npm: npmProvider,
+};
+
+export const PLUGIN_META: PluginMeta[] = [
+  // ... existing entries
+  { id: "npm", label: "npm", description: "Search npm packages", icon: Package },
+];
+```
+
+### Plugin Ideas
+
+Looking for inspiration? Here are some plugins the community could build:
+
+- **Jira / Linear** — issues, boards, sprint status
+- **Slack** — channels, messages, people
+- **AWS Console** — services, resources, CloudWatch
+- **Docker** — containers, images, compose stacks
+- **npm / PyPI** — package registry search
+- **Homebrew** — formulae, casks
+- **Kubernetes** — pods, deployments, services
+- **CI/CD** — GitHub Actions, CircleCI run status
+- **Bookmarks** — browser bookmarks search
+- **Notes** — Apple Notes, Obsidian vault search
+
+Don't see your tool? Build a plugin and open a PR.
+
+## Architecture
+
+| Process | Path | Role |
+|---------|------|------|
+| **Main** | `src/bun/` | Runs in Bun. System tray, windows, native FFI, global hotkey. |
+| **Renderer** | `src/mainview/` | React app in BrowserWindow. Command palette, plugins, settings. |
+
+```
+┌──────────────┐      RPC      ┌───────────────────┐
+│  Main (Bun)   │◄────────────►│  Renderer (React)  │
+│  tray, FFI,   │              │  palette, UI,      │
+│  native APIs  │              │  plugins           │
+└──────────────┘              └───────────────────┘
+```
+
+See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
+
+## Development
+
+**Dev with HMR (recommended)**
 
 ```bash
-# Build de produção (canary)
-bun run build:canary
-
-# Compilar a dylib nativa (Objective-C → liboverlay.dylib)
-bun run build:native
+bun run dev:hmr         # Vite HMR + Electrobun concurrently
 ```
 
-## Lint e Testes
+**Build**
 
 ```bash
-bun run lint          # Biome check
-bun run lint:fix      # Biome check com auto-fix
-bun run test          # Vitest
+bun run build:native    # Compile Objective-C → liboverlay.dylib
+bun run build:canary    # Production build
 ```
 
-## Arquitetura
+**Test**
 
-### Modelo de dois processos
-
-| Processo | Caminho | Responsabilidade |
-|----------|---------|------------------|
-| **Main** | `src/bun/index.ts` | Roda no Bun. Gerencia janelas, system tray, FFI nativo, atalhos globais. |
-| **Renderer** | `src/mainview/` | App React carregado em BrowserWindow. Vite builda para `dist/`. |
-
-### Camada nativa
-
-`src/bun/native/overlay.m` — dylib Objective-C carregada via `bun:ffi`. Expõe:
-
-- `makeWindowOverlay(NSWindow*)` — overlay fullscreen com delegate customizado
-- `registerHotkey(NSWindow*)` — atalho global ⌘+Shift+Space via Carbon API
-- `quitApp()` — encerra o app
-
-Após alterações no `.m`, recompilar com `bun run build:native`.
-
-### HMR
-
-`bun run dev:hmr` inicia o Vite na porta `5173` em paralelo com o Electrobun. O processo main detecta o servidor — se acessível, carrega do Vite (hot reload instantâneo). Caso contrário, usa os assets empacotados.
-
-### Stack de UI
-
-- [shadcn/ui](https://ui.shadcn.com/) (estilo New York) — `src/components/ui/`
-- [Radix UI](https://www.radix-ui.com/) (Dialog, Popover, ScrollArea)
-- [cmdk](https://cmdk.paco.me/) — command palette
-- [Tailwind CSS 4](https://tailwindcss.com/) com dark mode (CSS-first config via `@theme inline`)
-- [Lucide React](https://lucide.dev/) — ícones
-
-## Estrutura do projeto
-
-```
-src/
-├── bun/
-│   ├── index.ts          # Processo main (tray, janelas, FFI)
-│   ├── rpc.ts            # Comunicação main ↔ renderer
-│   └── native/
-│       └── overlay.m     # Dylib Objective-C (overlay + hotkey + quit)
-├── mainview/
-│   ├── index.html        # Entry point do Vite
-│   ├── App.tsx           # Componente raiz React
-│   └── splash.html       # Splash screen
-├── components/
-│   └── ui/               # Componentes shadcn/ui
-└── lib/
-    └── utils.ts          # cn() — clsx + tailwind-merge
+```bash
+bun run test            # Unit tests (Vitest)
+bun run test:e2e        # E2E tests (Appium Mac2)
 ```
 
-## Configurações principais
+**Lint**
 
-| Arquivo | Descrição |
-|---------|-----------|
-| `electrobun.config.ts` | Identidade do app (`com.ptolomeu.app`), regras de cópia no build |
-| `vite.config.ts` | Root em `src/mainview/`, output para `dist/`, plugin `@tailwindcss/vite` |
-| `components.json` | Config shadcn/ui com alias `@/` → `src/` |
-| `src/mainview/index.css` | Tailwind CSS 4: `@theme inline` (cores, radius), dark mode via `@custom-variant` |
+```bash
+bun run lint            # Biome check
+bun run lint:fix        # Biome auto-fix
+```
 
-## Licença
+## Contributing
 
-Projeto privado.
+### Report Bugs
+
+Open an issue with reproduction steps. Include your macOS version, Bun version, and steps to reproduce.
+
+### Suggest a Plugin
+
+Open an issue tagged `plugin-idea`. Describe the tool or service and what searches it would enable.
+
+### Build a Plugin
+
+1. Implement the `SearchProvider` interface (see [Plugin System](#plugin-system) above)
+2. Add your provider to `PLUGIN_REGISTRY` in `src/mainview/providers/registry.ts`
+3. Add a `PluginMeta` entry with icon, label, and description
+4. Open a PR
+
+### Code Standards
+
+- **Linter/formatter:** Biome — run `bun run lint:fix` before committing
+- **Commits:** conventional commits (`feat(scope):`, `fix(scope):`)
+- **UI labels:** Portuguese (pt-BR) — "Abrir", "Sair", "Buscar"
+- **Package manager:** Bun only (`bun install`, `bun run`)
+- **Path alias:** `@/*` maps to `src/*`
+
+### PR Process
+
+1. Fork the repo
+2. Create a feature branch (`feat/my-plugin`)
+3. Run `bun run lint:fix && bun run test`
+4. Open a PR with a description of your changes
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE) for details.
+
+---
+
+> Named after Claudius Ptolemy, who placed Earth at the center of the cosmos. Ptolomeu places you at the center of your workflow.
+
+🇧🇷 [Leia em Português](README.pt-BR.md)
