@@ -131,9 +131,13 @@ function PaletteContent() {
 		handleSearch();
 	}, [activeProvider.id, activeSubType, handleSearch, query]);
 
+	// Claude provider shows recent sessions even with empty query
+	const hasIdleResults =
+		activeProvider.id === "claude" && results.length > 0 && !query.trim();
 	const hasContent =
-		query.trim().length > 0 &&
-		(results.length > 0 || isLoading || error !== null);
+		hasIdleResults ||
+		(query.trim().length > 0 &&
+			(results.length > 0 || isLoading || error !== null));
 
 	// Resize native window when content appears/disappears, settings dialog toggles, or combobox opens
 	useEffect(() => {
