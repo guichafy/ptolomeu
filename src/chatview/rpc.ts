@@ -125,10 +125,34 @@ export interface SessionMeta {
 	lastMessage: string;
 }
 
+/** Block type for stored messages. */
+export type StoredBlock =
+	| { type: "text"; text: string }
+	| { type: "thinking"; thinking: string; durationMs?: number }
+	| {
+			type: "tool_use";
+			id: string;
+			name: string;
+			input: unknown;
+			status: "running" | "done" | "error";
+			elapsedSeconds?: number;
+	  }
+	| {
+			type: "tool_result";
+			toolUseId: string;
+			content: string;
+			isError?: boolean;
+	  };
+
+/** Stored message V2 format with structured blocks. */
 export interface StoredMessage {
+	version: 2;
 	role: "user" | "assistant";
-	content: string;
+	blocks: StoredBlock[];
 	timestamp: string;
+	cost?: number;
+	durationMs?: number;
+	tokenUsage?: { input: number; output: number };
 }
 
 interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
@@ -207,12 +231,23 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeStreamChunk: { sessionId: string; chunk: unknown };
 			claudeStreamEnd: {
 				sessionId: string;
-				result: { subtype: string; result?: string };
+				result: {
+					subtype: string;
+					result?: string;
+					totalCostUsd?: number;
+					durationMs?: number;
+					usage?: { input: number; output: number };
+				};
 			};
 			claudeStreamError: { sessionId: string; error: string };
+			claudeOpenSession: { sessionId: string };
 		};
 	};
 }
+
+let openSessionHandler:
+	| ((args: { sessionId: string }) => void)
+	| null = null;
 
 let streamChunkHandler:
 	| ((args: { sessionId: string; chunk: unknown }) => void)
@@ -220,7 +255,13 @@ let streamChunkHandler:
 let streamEndHandler:
 	| ((args: {
 			sessionId: string;
-			result: { subtype: string; result?: string };
+			result: {
+				subtype: string;
+				result?: string;
+				totalCostUsd?: number;
+				durationMs?: number;
+				usage?: { input: number; output: number };
+			};
 	  }) => void)
 	| null = null;
 let streamErrorHandler:
@@ -231,7 +272,13 @@ export function setStreamHandlers(handlers: {
 	onChunk: (args: { sessionId: string; chunk: unknown }) => void;
 	onEnd: (args: {
 		sessionId: string;
-		result: { subtype: string; result?: string };
+		result: {
+			subtype: string;
+			result?: string;
+			totalCostUsd?: number;
+			durationMs?: number;
+			usage?: { input: number; output: number };
+		};
 	}) => void;
 	onError: (args: { sessionId: string; error: string }) => void;
 }) {
@@ -254,10 +301,17 @@ const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 			claudeStreamError: (args) => {
 				streamErrorHandler?.(args);
 			},
+			claudeOpenSession: (args) => {
+				openSessionHandler?.(args);
+			},
 		},
 	},
 });
 
 new Electroview({ rpc: rpcInstance });
+
+export function onOpenSession(handler: (args: { sessionId: string }) => void) {
+	openSessionHandler = handler;
+}
 
 export const rpc = rpcInstance;

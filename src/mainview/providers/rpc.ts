@@ -125,10 +125,34 @@ export interface SessionMeta {
 	lastMessage: string;
 }
 
+/** Block type for stored messages. */
+export type StoredBlock =
+	| { type: "text"; text: string }
+	| { type: "thinking"; thinking: string; durationMs?: number }
+	| {
+			type: "tool_use";
+			id: string;
+			name: string;
+			input: unknown;
+			status: "running" | "done" | "error";
+			elapsedSeconds?: number;
+	  }
+	| {
+			type: "tool_result";
+			toolUseId: string;
+			content: string;
+			isError?: boolean;
+	  };
+
+/** Stored message V2 format with structured blocks. */
 export interface StoredMessage {
+	version: 2;
 	role: "user" | "assistant";
-	content: string;
+	blocks: StoredBlock[];
 	timestamp: string;
+	cost?: number;
+	durationMs?: number;
+	tokenUsage?: { input: number; output: number };
 }
 
 interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
@@ -207,9 +231,16 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeStreamChunk: { sessionId: string; chunk: unknown };
 			claudeStreamEnd: {
 				sessionId: string;
-				result: { subtype: string; result?: string };
+				result: {
+					subtype: string;
+					result?: string;
+					totalCostUsd?: number;
+					durationMs?: number;
+					usage?: { input: number; output: number };
+				};
 			};
 			claudeStreamError: { sessionId: string; error: string };
+			claudeOpenSession: { sessionId: string };
 		};
 	};
 }
@@ -234,6 +265,7 @@ const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 			claudeStreamChunk: () => {},
 			claudeStreamEnd: () => {},
 			claudeStreamError: () => {},
+			claudeOpenSession: () => {},
 		},
 	},
 });

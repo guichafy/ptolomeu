@@ -19,8 +19,7 @@ export default {
 			"src/bun/native/liboverlay.dylib": "native/liboverlay.dylib",
 			"src/bun/tray-icon.png": "native/tray-icon.png",
 		},
-		// Ignore Vite output in watch mode — HMR handles view rebuilds separately
-		watchIgnore: ["dist/**", "dist-chat/**"],
+		watchIgnore: [],
 		mac: {
 			bundleCEF: false,
 			icons: "ptolomeu.iconset",

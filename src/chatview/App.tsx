@@ -1,28 +1,28 @@
 import { ChatHeader } from "./components/chat-header";
 import { ChatInput } from "./components/chat-input";
-import { MessageList } from "./components/message-list";
+import { Conversation } from "./components/conversation";
 import { useChatSession } from "./hooks/use-chat-session";
 
 export default function App() {
 	const {
 		sessionId,
 		messages,
-		isStreaming,
-		streamingText,
+		streamingBlocks,
+		sessionState,
 		sendMessage,
 		stopGeneration,
 	} = useChatSession();
 
 	return (
 		<div className="flex h-screen flex-col bg-background text-foreground">
-			<ChatHeader sessionId={sessionId} />
-			<MessageList
+			<ChatHeader sessionId={sessionId} sessionState={sessionState} />
+			<Conversation
 				messages={messages}
-				streamingText={streamingText}
-				isStreaming={isStreaming}
+				streamingBlocks={streamingBlocks}
+				sessionState={sessionState}
 			/>
 			<ChatInput
-				isStreaming={isStreaming}
+				isStreaming={sessionState !== "idle"}
 				onSend={sendMessage}
 				onStop={stopGeneration}
 			/>

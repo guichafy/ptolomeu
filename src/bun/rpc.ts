@@ -22,7 +22,7 @@ import {
 	setSender as claudeSetSender,
 	stopGeneration as claudeStopGeneration,
 	type SessionMeta,
-	type StoredMessage,
+	type StoredMessageV2,
 } from "./claude/session-manager";
 import {
 	type GitHubItem,
@@ -96,7 +96,7 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			claudeGetSessionMessages: {
 				params: { sessionId: string };
-				response: StoredMessage[];
+				response: StoredMessageV2[];
 			};
 			claudeGetAuthStatus: { params: void; response: ClaudeAuthStatus };
 			claudeLoginSSO: {
@@ -120,9 +120,16 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeStreamChunk: { sessionId: string; chunk: unknown };
 			claudeStreamEnd: {
 				sessionId: string;
-				result: { subtype: string; result?: string };
+				result: {
+					subtype: string;
+					result?: string;
+					totalCostUsd?: number;
+					durationMs?: number;
+					usage?: { input: number; output: number };
+				};
 			};
 			claudeStreamError: { sessionId: string; error: string };
+			claudeOpenSession: { sessionId: string };
 		};
 	};
 }
@@ -369,15 +376,8 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 			},
 			claudeListSessions: async () => claudeListSessions(),
 			claudeCreateSession: async ({ prompt, cwd }) => {
-				console.log("[rpc] claudeCreateSession called, prompt:", prompt);
-				try {
-					const sessionId = await claudeCreateSession(prompt, cwd);
-					console.log("[rpc] claudeCreateSession success:", sessionId);
-					return { sessionId };
-				} catch (err) {
-					console.error("[rpc] claudeCreateSession FAILED:", err);
-					throw err;
-				}
+				const sessionId = await claudeCreateSession(prompt, cwd);
+				return { sessionId };
 			},
 			claudeResumeSession: async ({ sessionId }) =>
 				claudeResumeSession(sessionId),
