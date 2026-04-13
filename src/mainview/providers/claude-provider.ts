@@ -50,17 +50,10 @@ export const claudeProvider: SearchProvider = {
 				subtitle: "Iniciar nova sessão",
 				icon: createElement(Plus, { size: 16 }),
 				onSelect: async () => {
-					console.log("[claude-provider] onSelect triggered, query:", query);
 					try {
-						console.log("[claude-provider] calling claudeCreateSession...");
-						const { sessionId } =
-							await rpc.request.claudeCreateSession({
-								prompt: query,
-							});
-						console.log(
-							"[claude-provider] session created:",
-							sessionId,
-						);
+						const { sessionId } = await rpc.request.claudeCreateSession({
+							prompt: query,
+						});
 						rpc.request.claudeOpenChat({ sessionId });
 					} catch (err) {
 						console.error("[claude] Failed to create session:", err);

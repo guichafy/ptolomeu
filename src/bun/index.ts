@@ -4,7 +4,6 @@ import {
 	ApplicationMenu,
 	BrowserWindow,
 	Tray,
-	Updater,
 	Utils,
 } from "electrobun/bun";
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics";
@@ -38,97 +37,16 @@ try {
 	process.exit(1);
 }
 
-const DEV_SERVER_PORT = 5173;
-const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
-
-const CHAT_DEV_SERVER_PORT = 5174;
-const CHAT_DEV_SERVER_URL = `http://localhost:${CHAT_DEV_SERVER_PORT}`;
-
-// Wait for a Vite dev server to be fully ready, including dependency pre-bundling.
-// Vite responds to HTML requests immediately but may still be optimizing deps in the
-// background. Fetching the entry point script forces Vite to finish optimization
-// before responding, ensuring the page won't hit missing modules on first load.
-async function waitForDevServer(
-	url: string,
-	maxAttempts = 30,
-	delayMs = 500,
-): Promise<boolean> {
-	for (let attempt = 0; attempt < maxAttempts; attempt++) {
-		try {
-			const response = await fetch(url, {
-				signal: AbortSignal.timeout(2000),
-			});
-			if (response.ok) {
-				const html = await response.text();
-				if (!html.includes('type="module"')) {
-					await Bun.sleep(delayMs);
-					continue;
-				}
-				// Extract the entry point script from HTML and fetch it to ensure
-				// Vite has finished dependency pre-bundling
-				const entryMatch = html.match(/src="([^"]+\.(tsx?|jsx?))"/);
-				if (entryMatch) {
-					const entryUrl = new URL(entryMatch[1], url).href;
-					const entryResponse = await fetch(entryUrl, {
-						signal: AbortSignal.timeout(15000),
-					});
-					if (!entryResponse.ok) {
-						await Bun.sleep(delayMs);
-						continue;
-					}
-				}
-				return true;
-			}
-		} catch {
-			// Dev server not ready yet
-		}
-		await Bun.sleep(delayMs);
-	}
-	return false;
-}
-
-// Check if Vite dev server is running for HMR
-async function getMainViewUrl(): Promise<string> {
-	const channel = await Updater.localInfo.channel();
-	if (channel === "dev") {
-		const ready = await waitForDevServer(DEV_SERVER_URL);
-		if (ready) {
-			console.log(`HMR enabled: Using Vite dev server at ${DEV_SERVER_URL}`);
-			return DEV_SERVER_URL;
-		}
-		console.log(
-			"Vite dev server not available. Using bundled assets.",
-		);
-	}
-	return "views://mainview/index.html";
-}
-
-// Check if Vite chat dev server is running for HMR
-async function getChatViewUrl(sessionId?: string): Promise<string> {
-	const channel = await Updater.localInfo.channel();
-	const params = sessionId ? `?sessionId=${sessionId}` : "";
-	if (channel === "dev") {
-		const ready = await waitForDevServer(CHAT_DEV_SERVER_URL);
-		if (ready) {
-			console.log(
-				`HMR enabled: Using Vite chat dev server at ${CHAT_DEV_SERVER_URL}`,
-			);
-			return `${CHAT_DEV_SERVER_URL}${params}`;
-		}
-		console.log("Vite chat dev server not available, using bundled assets.");
-	}
-	return `views://chatview/index.html${params}`;
-}
-
 // Chat window — lazy, created on first open
 let chatWindow: InstanceType<typeof BrowserWindow> | null = null;
 
-async function openChatWindow(sessionId?: string) {
-	const url = await getChatViewUrl(sessionId);
-
+function openChatWindow(sessionId?: string) {
 	if (chatWindow) {
-		// Window already exists — just show it
+		// Window already exists — send sessionId via RPC and show it
 		try {
+			if (sessionId) {
+				rpc.send.claudeOpenSession({ sessionId });
+			}
 			chatWindow.show();
 			return;
 		} catch {
@@ -138,7 +56,7 @@ async function openChatWindow(sessionId?: string) {
 
 	chatWindow = new BrowserWindow({
 		title: "Ptolomeu — Chat",
-		url,
+		url: "views://chatview/index.html",
 		hidden: false,
 		titleBarStyle: "default",
 		styleMask: {
@@ -156,6 +74,13 @@ async function openChatWindow(sessionId?: string) {
 		},
 		rpc,
 	});
+
+	// Send sessionId via RPC after window is created
+	if (sessionId) {
+		setTimeout(() => {
+			rpc.send.claudeOpenSession({ sessionId });
+		}, 500);
+	}
 }
 
 // Hide dock icon — app runs as a menu bar agent
@@ -189,7 +114,7 @@ ApplicationMenu.setApplicationMenu([
 ]);
 
 // Create the main application window (hidden)
-const url = await getMainViewUrl();
+const url = "views://mainview/index.html";
 
 const mainWindow = new BrowserWindow({
 	title: "Ptolomeu",

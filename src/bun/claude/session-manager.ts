@@ -7,7 +7,12 @@ import {
 	unstable_v2_resumeSession,
 } from "@anthropic-ai/claude-agent-sdk";
 import { loadSettings } from "../settings";
-import type { MessagePersister, StreamMessageSender } from "./streaming";
+import type {
+	MessagePersister,
+	PersistBlock,
+	ResultMeta,
+	StreamMessageSender,
+} from "./streaming";
 import { startStreamingLoop } from "./streaming";
 
 // ---------------------------------------------------------------------------
@@ -69,10 +74,59 @@ export interface SessionIndex {
 	sessions: SessionMeta[];
 }
 
-export interface StoredMessage {
+/** Legacy format (v1): plain text content. */
+export interface StoredMessageV1 {
 	role: "user" | "assistant";
 	content: string;
 	timestamp: string;
+}
+
+/** Block type for V2 persistence (mirrors PersistBlock from streaming). */
+export type StoredBlock =
+	| { type: "text"; text: string }
+	| { type: "thinking"; thinking: string; durationMs?: number }
+	| {
+			type: "tool_use";
+			id: string;
+			name: string;
+			input: unknown;
+			status: "running" | "done" | "error";
+			elapsedSeconds?: number;
+	  }
+	| {
+			type: "tool_result";
+			toolUseId: string;
+			content: string;
+			isError?: boolean;
+	  };
+
+/** Current format (v2): structured content blocks. */
+export interface StoredMessageV2 {
+	version: 2;
+	role: "user" | "assistant";
+	blocks: StoredBlock[];
+	timestamp: string;
+	cost?: number;
+	durationMs?: number;
+	tokenUsage?: { input: number; output: number };
+}
+
+export type StoredMessage = StoredMessageV1 | StoredMessageV2;
+
+/** Type guard for V2 messages. */
+function isV2(msg: StoredMessage): msg is StoredMessageV2 {
+	return "version" in msg && (msg as StoredMessageV2).version === 2;
+}
+
+/** Promote a v1 message to v2 by wrapping content in a text block. */
+function migrateStoredMessage(msg: StoredMessage): StoredMessageV2 {
+	if (isV2(msg)) return msg;
+	return {
+		version: 2,
+		role: msg.role,
+		blocks: [{ type: "text", text: msg.content }],
+		timestamp: msg.timestamp,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -148,12 +202,13 @@ function messagesPath(sessionId: string): string {
 	return join(sessionDir(sessionId), "messages.json");
 }
 
-async function readMessages(sessionId: string): Promise<StoredMessage[]> {
+async function readMessages(sessionId: string): Promise<StoredMessageV2[]> {
 	const file = Bun.file(messagesPath(sessionId));
 	if (!(await file.exists())) return [];
 	try {
 		const parsed = JSON.parse(await file.text());
-		return Array.isArray(parsed) ? parsed : [];
+		if (!Array.isArray(parsed)) return [];
+		return parsed.map((msg: StoredMessage) => migrateStoredMessage(msg));
 	} catch {
 		return [];
 	}
@@ -161,34 +216,33 @@ async function readMessages(sessionId: string): Promise<StoredMessage[]> {
 
 async function writeMessages(
 	sessionId: string,
-	messages: StoredMessage[],
+	messages: StoredMessageV2[],
 ): Promise<void> {
 	const dir = sessionDir(sessionId);
 	await mkdir(dir, { recursive: true });
 	await Bun.write(messagesPath(sessionId), JSON.stringify(messages, null, 2));
 }
 
-async function appendStoredMessage(
+async function appendStoredMessageV2(
 	sessionId: string,
-	role: "user" | "assistant",
-	content: string,
+	msg: StoredMessageV2,
 ): Promise<void> {
 	const messages = await readMessages(sessionId);
-	messages.push({
-		role,
-		content,
-		timestamp: new Date().toISOString(),
-	});
+	messages.push(msg);
 	await writeMessages(sessionId, messages);
 
-	// Update index metadata
 	const index = await readIndex();
 	const meta = index.sessions.find((s) => s.id === sessionId);
 	if (meta) {
 		meta.messageCount = messages.length;
 		meta.updatedAt = new Date().toISOString();
-		if (role === "user") {
-			meta.lastMessage = content.slice(0, 100);
+		if (msg.role === "user") {
+			const preview = msg.blocks
+				.filter((b): b is { type: "text"; text: string } => b.type === "text")
+				.map((b) => b.text)
+				.join("")
+				.slice(0, 100);
+			meta.lastMessage = preview;
 		}
 		await writeIndex(index);
 	}
@@ -211,9 +265,19 @@ const persister: MessagePersister = {
 	appendMessage: async (
 		sessionId: string,
 		role: "assistant",
-		content: string,
+		blocks: PersistBlock[],
+		meta?: ResultMeta,
 	) => {
-		await appendStoredMessage(sessionId, role, content);
+		const msg: StoredMessageV2 = {
+			version: 2,
+			role,
+			blocks: blocks as StoredBlock[],
+			timestamp: new Date().toISOString(),
+			...(meta?.totalCostUsd != null && { cost: meta.totalCostUsd }),
+			...(meta?.durationMs != null && { durationMs: meta.durationMs }),
+			...(meta?.usage && { tokenUsage: meta.usage }),
+		};
+		await appendStoredMessageV2(sessionId, msg);
 	},
 };
 
@@ -240,30 +304,23 @@ export async function createSession(
 	cwd?: string,
 ): Promise<string> {
 	const id = crypto.randomUUID();
-	console.log("[session-manager] createSession called, id:", id);
 
 	// Load current settings for model and permission mode
 	const settings = await loadSettings();
 	const { model, permissionMode, authMode } = settings.claude;
-	console.log("[session-manager] settings:", { model, permissionMode, authMode });
 
 	// Resolve the Claude CLI path
 	const claudePath = await findClaudeCli();
-	console.log("[session-manager] Claude CLI path:", claudePath);
 
 	// Create the SDK session
-	console.log("[session-manager] calling unstable_v2_createSession...");
 	const sdkSession = unstable_v2_createSession({
 		model,
 		permissionMode,
 		pathToClaudeCodeExecutable: claudePath,
 		allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "LS"],
 	});
-	console.log("[session-manager] SDK session created, sending prompt...");
-
 	// Send the initial prompt — the SDK session needs a user message to begin
 	await sdkSession.send(prompt);
-	console.log("[session-manager] prompt sent successfully");
 
 	// The sessionId becomes available after the first message is received.
 	// We peek at the stream to capture it, then let the streaming loop
@@ -302,8 +359,12 @@ export async function createSession(
 	index.sessions.push(meta);
 	await writeIndex(index);
 
-	// Persist the initial user message
-	await appendStoredMessage(id, "user", prompt);
+	await appendStoredMessageV2(id, {
+		version: 2,
+		role: "user",
+		blocks: [{ type: "text", text: prompt }],
+		timestamp: now,
+	});
 
 	// Start the streaming loop (fire-and-forget — it runs until the stream ends)
 	startStreamingLoop(sdkSession, id, sender, persister).then(() => {
@@ -367,8 +428,12 @@ export async function sendMessage(message: string): Promise<void> {
 		throw new Error("No active session");
 	}
 
-	// Persist the user message
-	await appendStoredMessage(activeSessionId, "user", message);
+	await appendStoredMessageV2(activeSessionId, {
+		version: 2,
+		role: "user",
+		blocks: [{ type: "text", text: message }],
+		timestamp: new Date().toISOString(),
+	});
 
 	// Send to SDK — this triggers a new assistant turn
 	await activeSession.send(message);
@@ -434,7 +499,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
  */
 export async function getSessionMessages(
 	sessionId: string,
-): Promise<StoredMessage[]> {
+): Promise<StoredMessageV2[]> {
 	return readMessages(sessionId);
 }
 

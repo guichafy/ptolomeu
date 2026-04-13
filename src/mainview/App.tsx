@@ -201,19 +201,9 @@ function PaletteContent() {
 		}
 		if (e.key === "Enter") {
 			const resultsAreFresh = resultsQueryRef.current === query;
-			console.log("[App] Enter pressed", {
-				resultsAreFresh,
-				resultsQueryRef: resultsQueryRef.current,
-				query,
-				selectedIndex,
-				hasResult: !!results[selectedIndex],
-				providerId: activeProvider.id,
-			});
 			if (resultsAreFresh && results[selectedIndex]) {
-				console.log("[App] Calling onSelect for:", results[selectedIndex].title);
 				results[selectedIndex].onSelect();
 			} else if (activeProvider.id !== "calc" && activeProvider.id !== "apps") {
-				console.log("[App] Results not fresh, calling handleSearch");
 				handleSearch();
 			}
 			return;

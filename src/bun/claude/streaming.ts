@@ -12,9 +12,41 @@ export type StreamMessageSender = {
 	sendChunk: (sessionId: string, chunk: unknown) => void;
 	sendEnd: (
 		sessionId: string,
-		result: { subtype: string; result?: string },
+		result: {
+			subtype: string;
+			result?: string;
+			totalCostUsd?: number;
+			durationMs?: number;
+			usage?: { input: number; output: number };
+		},
 	) => void;
 	sendError: (sessionId: string, error: string) => void;
+};
+
+/** A content block for persistence (mirrors StoredMessageV2 blocks). */
+export type PersistBlock =
+	| { type: "text"; text: string }
+	| { type: "thinking"; thinking: string; durationMs?: number }
+	| {
+			type: "tool_use";
+			id: string;
+			name: string;
+			input: unknown;
+			status: "running" | "done" | "error";
+			elapsedSeconds?: number;
+	  }
+	| {
+			type: "tool_result";
+			toolUseId: string;
+			content: string;
+			isError?: boolean;
+	  };
+
+/** Metadata extracted from the SDK result message. */
+export type ResultMeta = {
+	totalCostUsd?: number;
+	durationMs?: number;
+	usage?: { input: number; output: number };
 };
 
 /**
@@ -25,7 +57,8 @@ export type MessagePersister = {
 	appendMessage: (
 		sessionId: string,
 		role: "assistant",
-		content: string,
+		blocks: PersistBlock[],
+		meta?: ResultMeta,
 	) => Promise<void>;
 };
 
@@ -111,17 +144,42 @@ export async function startStreamingLoop(
 					type: "result";
 					subtype: string;
 					result?: string;
+					total_cost_usd?: number;
+					duration_ms?: number;
+					usage?: { input_tokens?: number; output_tokens?: number };
 				};
+
+				// Build metadata from the SDK result
+				const meta: ResultMeta = {};
+				if (typeof result.total_cost_usd === "number") {
+					meta.totalCostUsd = result.total_cost_usd;
+				}
+				if (typeof result.duration_ms === "number") {
+					meta.durationMs = result.duration_ms;
+				}
+				if (result.usage) {
+					const input = result.usage.input_tokens;
+					const output = result.usage.output_tokens;
+					if (typeof input === "number" && typeof output === "number") {
+						meta.usage = { input, output };
+					}
+				}
 
 				sender.sendEnd(sessionId, {
 					subtype: result.subtype,
 					result: result.result,
+					totalCostUsd: meta.totalCostUsd,
+					durationMs: meta.durationMs,
+					usage: meta.usage,
 				});
 
 				// Persist accumulated assistant text (or the result string as fallback)
 				const textToPersist = accumulatedText || result.result || "";
 				if (textToPersist) {
-					await persister.appendMessage(sessionId, "assistant", textToPersist);
+					const blocks: PersistBlock[] = [
+						{ type: "text", text: textToPersist },
+					];
+					await persister.appendMessage(sessionId, "assistant", blocks, meta);
 				}
 
 				// Reset for a potential next turn (the generator may continue
@@ -137,7 +195,10 @@ export async function startStreamingLoop(
 		// Still try to persist whatever we collected so far
 		if (accumulatedText) {
 			try {
-				await persister.appendMessage(sessionId, "assistant", accumulatedText);
+				const blocks: PersistBlock[] = [
+					{ type: "text", text: accumulatedText },
+				];
+				await persister.appendMessage(sessionId, "assistant", blocks);
 			} catch {
 				// Best-effort persistence — do not mask the original error
 			}
