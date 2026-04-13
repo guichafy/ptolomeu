@@ -14,16 +14,21 @@ export function useChatSession() {
 		sessionIdRef.current = sessionId;
 	}, [sessionId]);
 
-	// Load session from URL params
+	// Load session from URL params and resume SDK session
 	useEffect(() => {
 		const params = new URLSearchParams(window.location.search);
 		const sid = params.get("sessionId");
 		if (sid) {
 			setSessionId(sid);
+			// Load message history for display
 			rpc.request
 				.claudeGetSessionMessages({ sessionId: sid })
 				.then(setMessages)
 				.catch(() => {});
+			// Resume the SDK session so sendMessage works
+			rpc.request.claudeResumeSession({ sessionId: sid }).catch((err) => {
+				console.error("[chat] Failed to resume session:", err);
+			});
 		}
 	}, []);
 
