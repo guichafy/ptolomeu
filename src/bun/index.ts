@@ -1,8 +1,9 @@
-import { dlopen, FFIType } from "bun:ffi";
+import { dlopen, FFIType, JSCallback } from "bun:ffi";
 import { join } from "node:path";
 import { ApplicationMenu, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics";
-import { rpc, setMainWindow, setOpenChatCallback } from "./rpc";
+import { listSessions as claudeListSessions } from "./claude/session-manager";
+import { chatRpc, mainRpc, setMainWindow, setOpenChatCallback } from "./rpc";
 import { loadSettings } from "./settings";
 
 // Load native helper for window overlay on fullscreen
@@ -15,6 +16,10 @@ const overlaySymbols = {
 		returns: FFIType.void,
 	},
 	registerHotkey: {
+		args: [FFIType.ptr],
+		returns: FFIType.void,
+	},
+	setWindowShowCallback: {
 		args: [FFIType.ptr],
 		returns: FFIType.void,
 	},
@@ -47,7 +52,7 @@ function openChatWindow(sessionId?: string) {
 				console.log(
 					`[main] openChatWindow: reusing window, sending openSession sessionId=${sessionId}`,
 				);
-				rpc.send.claudeOpenSession({ sessionId });
+				chatRpc.send.claudeOpenSession({ sessionId });
 			}
 			chatWindow.show();
 			return;
@@ -79,7 +84,7 @@ function openChatWindow(sessionId?: string) {
 			x: 300,
 			y: 150,
 		},
-		rpc,
+		rpc: chatRpc,
 	});
 
 	// Electrobun removes the window from its internal map on close, but our
@@ -96,7 +101,7 @@ function openChatWindow(sessionId?: string) {
 			console.log(
 				`[main] openChatWindow: sending openSession to new window sessionId=${sessionId}`,
 			);
-			rpc.send.claudeOpenSession({ sessionId });
+			chatRpc.send.claudeOpenSession({ sessionId });
 		}, 500);
 	}
 }
@@ -152,11 +157,47 @@ const mainWindow = new BrowserWindow({
 		x: 200,
 		y: 200,
 	},
-	rpc,
+	rpc: mainRpc,
 });
 
 setMainWindow(mainWindow);
 setOpenChatCallback((sessionId) => openChatWindow(sessionId));
+
+// Push Claude session list to the palette whenever the main window gains
+// focus. The webview's own visibilitychange/focus events are unreliable
+// after the chat window has been shown — WebKit can suspend the webview,
+// and outbound RPC calls from the renderer may be dropped. Pushing from the
+// bun side bypasses the webview state entirely, so the palette always shows
+// up-to-date sessions on reopen.
+// Coalesce rapid pushClaudeSessions calls within this window. On a hotkey
+// press, both `mainWindow.on("focus")` and the native `setWindowShowCallback`
+// fire within milliseconds of each other — without a throttle we'd do two
+// disk reads and two message sends per open. 50ms is well under any
+// user-perceivable delay and comfortably wider than the observed gap between
+// the two paths.
+const PUSH_COALESCE_MS = 50;
+let lastPushAt = 0;
+async function pushClaudeSessions(reason: string): Promise<void> {
+	const now = Date.now();
+	if (now - lastPushAt < PUSH_COALESCE_MS) {
+		return;
+	}
+	lastPushAt = now;
+	try {
+		const sessions = await claudeListSessions();
+		console.log(
+			`[main] pushClaudeSessions: reason=${reason} count=${sessions.length}`,
+		);
+		mainRpc.send.claudeSessionsUpdate({ sessions });
+	} catch (err) {
+		console.error("[main] pushClaudeSessions failed:", err);
+	}
+}
+
+mainWindow.on("focus", () => {
+	console.log("[main] mainWindow focus event fired");
+	pushClaudeSessions("mainWindow.focus");
+});
 
 // Initialize analytics (respects user consent)
 const settings = await loadSettings();
@@ -185,9 +226,10 @@ tray.on("tray-clicked", (event: any) => {
 
 	if (action === "open-window") {
 		overlayLib.symbols.makeWindowOverlay(mainWindow.ptr);
+		pushClaudeSessions("tray.open-window");
 	} else if (action === "open-preferences") {
 		overlayLib.symbols.makeWindowOverlay(mainWindow.ptr);
-		rpc.send.openPreferences({});
+		mainRpc.send.openPreferences({});
 	} else if (action === "quit") {
 		trackEvent("app_quit");
 		shutdownAnalytics().finally(() => {
@@ -199,5 +241,23 @@ tray.on("tray-clicked", (event: any) => {
 
 // Register global hotkey (Command+Shift+Space) via Carbon API in native code
 overlayLib.symbols.registerHotkey(mainWindow.ptr);
+
+// Native-side notification for when the hotkey transitions the window from
+// hidden to visible. The Electrobun `focus` event should cover this too, but
+// the custom NSWindowDelegate installed in overlay.m forwards delegate
+// callbacks via message forwarding, which has proven unreliable in practice.
+// This direct callback bypasses the delegate chain entirely.
+const windowShowCallback = new JSCallback(
+	() => {
+		console.log("[main] native windowShow callback fired");
+		pushClaudeSessions("native.windowShow");
+	},
+	{
+		args: [],
+		returns: "void",
+		threadsafe: true,
+	},
+);
+overlayLib.symbols.setWindowShowCallback(windowShowCallback.ptr);
 
 console.log("System tray app started!");

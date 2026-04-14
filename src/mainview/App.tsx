@@ -9,12 +9,13 @@ import {
 	SearchTypeCombobox,
 	type SearchTypeComboboxHandle,
 } from "./components/search-type-combobox";
+import { sessionToResult } from "./providers/claude-provider";
 import { GitHubProvider, useGitHub } from "./providers/github-context";
 import {
 	ProviderContextProvider,
 	useProvider,
 } from "./providers/provider-context";
-import { rpc } from "./providers/rpc";
+import { rpc, setClaudeSessionsUpdateHandler } from "./providers/rpc";
 import type { SearchResult } from "./providers/types";
 import { SettingsProvider, useSettings } from "./settings/settings-context";
 import { SettingsDialog } from "./settings/settings-dialog";
@@ -98,6 +99,13 @@ function PaletteContent() {
 		setError(null);
 		setSelectedIndex(0);
 
+		// For Claude's "recent sessions" view (empty query), the backend can
+		// push authoritative data at any moment. A parallel RPC that returns
+		// [] — whether legitimately or due to a transient webview/RPC failure —
+		// must not clobber a populated list that arrived via push. Use the
+		// functional setter to compare against the latest state.
+		const preserveOnEmpty = activeProvider.id === "claude" && !query.trim();
+
 		try {
 			const items = await activeProvider.search(
 				query,
@@ -105,14 +113,19 @@ function PaletteContent() {
 				providerContext,
 			);
 			if (!controller.signal.aborted) {
-				setResults(items);
+				setResults((prev) => {
+					if (preserveOnEmpty && items.length === 0 && prev.length > 0) {
+						return prev;
+					}
+					return items;
+				});
 				resultsQueryRef.current = query;
 			}
 		} catch (err) {
 			if (err instanceof DOMException && err.name === "AbortError") return;
 			if (!controller.signal.aborted) {
 				setError(err instanceof Error ? err.message : "Erro desconhecido");
-				setResults([]);
+				setResults((prev) => (preserveOnEmpty && prev.length > 0 ? prev : []));
 				resultsQueryRef.current = "";
 			}
 		} finally {
@@ -137,9 +150,36 @@ function PaletteContent() {
 		}
 	}, [activeProvider.id, handleSearch]);
 
-	// Re-fetch Claude recent sessions when the palette becomes visible again
-	// (hotkey / tray click). The native overlay hides/shows the window without
-	// remounting the React tree, so the useEffect above doesn't re-fire.
+	// Primary refresh trigger: the backend pushes the Claude session list
+	// whenever the main window gains focus (tray click, hotkey, reactivation).
+	// Pushing from bun bypasses webview quirks entirely — the mainview
+	// webview can be suspended by WebKit after the chat window is shown, and
+	// outbound RPCs from this renderer have been seen to be dropped in that
+	// state. The backend is always the authoritative source for sessions.
+	useEffect(() => {
+		setClaudeSessionsUpdateHandler(({ sessions }) => {
+			console.log(
+				`[mainview] claudeSessionsUpdate: count=${sessions.length} providerId=${activeProvider.id} hasQuery=${query.trim().length > 0}`,
+			);
+			if (activeProvider.id !== "claude") return;
+			if (query.trim()) return;
+			abortRef.current?.abort();
+			setResults(sessions.map(sessionToResult));
+			setError(null);
+			setIsLoading(false);
+			setSelectedIndex(0);
+			resultsQueryRef.current = "";
+		});
+		return () => {
+			setClaudeSessionsUpdateHandler(null);
+		};
+	}, [activeProvider.id, query]);
+
+	// Fallback refresh on webview visibility/focus events. These are not
+	// guaranteed to fire reliably after the chat window has been shown, but
+	// when they do, they provide a redundant refresh path. The handleSearch
+	// catch/empty-result paths are protected by `preserveOnEmpty`, so a
+	// failed RPC here cannot clobber a populated list set by the push above.
 	useEffect(() => {
 		const onVisible = () => {
 			if (document.hidden) return;

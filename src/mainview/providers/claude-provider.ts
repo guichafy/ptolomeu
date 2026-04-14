@@ -15,7 +15,7 @@ function timeAgo(isoDate: string): string {
 	return `${days}d`;
 }
 
-function sessionToResult(session: SessionMeta): SearchResult {
+export function sessionToResult(session: SessionMeta): SearchResult {
 	return {
 		id: session.id,
 		title: session.title,
@@ -37,8 +37,10 @@ export const claudeProvider: SearchProvider = {
 			try {
 				const sessions = await rpc.request.claudeListSessions();
 				if (signal?.aborted) return [];
+				console.log(`[claude] listSessions via RPC: count=${sessions.length}`);
 				return sessions.map(sessionToResult);
-			} catch {
+			} catch (err) {
+				console.error("[claude] claudeListSessions RPC failed:", err);
 				return [];
 			}
 		}

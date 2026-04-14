@@ -241,6 +241,7 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			claudeStreamError: { sessionId: string; error: string };
 			claudeOpenSession: { sessionId: string };
+			claudeSessionsUpdate: { sessions: SessionMeta[] };
 		};
 	};
 }
@@ -255,6 +256,28 @@ export function setOpenPreferencesHandler(
 	openPreferencesHandler = handler;
 }
 
+let claudeSessionsUpdateHandler:
+	| ((args: { sessions: SessionMeta[] }) => void)
+	| null = null;
+
+// Buffer the most recent claudeSessionsUpdate message that arrives before
+// the React tree has registered a handler. This happens on app start — bun
+// pushes the session list as soon as the main window gains focus, which can
+// race with the webview's initial mount. We keep only the latest args because
+// newer pushes supersede older ones (the backend is authoritative).
+let pendingClaudeSessionsUpdate: { sessions: SessionMeta[] } | null = null;
+
+export function setClaudeSessionsUpdateHandler(
+	handler: ((args: { sessions: SessionMeta[] }) => void) | null,
+) {
+	claudeSessionsUpdateHandler = handler;
+	if (handler && pendingClaudeSessionsUpdate) {
+		const pending = pendingClaudeSessionsUpdate;
+		pendingClaudeSessionsUpdate = null;
+		handler(pending);
+	}
+}
+
 const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 	maxRequestTime: 30_000,
 	handlers: {
@@ -266,6 +289,13 @@ const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 			claudeStreamEnd: () => {},
 			claudeStreamError: () => {},
 			claudeOpenSession: () => {},
+			claudeSessionsUpdate: (args) => {
+				if (claudeSessionsUpdateHandler) {
+					claudeSessionsUpdateHandler(args);
+				} else {
+					pendingClaudeSessionsUpdate = args;
+				}
+			},
 		},
 	},
 });
