@@ -142,6 +142,7 @@ const INDEX_PATH = join(SESSIONS_DIR, "index.json");
 
 let activeSession: SDKSession | null = null;
 let activeSessionId: string | null = null;
+let activeStreamingLoop: Promise<void> | null = null;
 
 /**
  * Injected by the RPC layer (Etapa 5) before any session is created.
@@ -281,6 +282,29 @@ const persister: MessagePersister = {
 	},
 };
 
+/**
+ * The SDK assigns a real session ID only after the first message exchange,
+ * so `createSession` falls back to our internal UUID. After each stream
+ * completes, sync the real ID to disk for future `resumeSession` calls.
+ */
+async function syncSdkSessionId(
+	internalId: string,
+	sdkSession: SDKSession,
+): Promise<void> {
+	try {
+		const resolvedId = sdkSession.sessionId;
+		if (!resolvedId) return;
+		const idx = await readIndex();
+		const m = idx.sessions.find((s) => s.id === internalId);
+		if (m && m.sdkSessionId !== resolvedId) {
+			m.sdkSessionId = resolvedId;
+			await writeIndex(idx);
+		}
+	} catch {
+		// sessionId not available — ignore
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -367,23 +391,11 @@ export async function createSession(
 	});
 
 	// Start the streaming loop (fire-and-forget — it runs until the stream ends)
-	startStreamingLoop(sdkSession, id, sender, persister).then(() => {
-		// Try to update the sdkSessionId in case it was not available earlier
-		try {
-			const resolvedId = sdkSession.sessionId;
-			if (resolvedId && resolvedId !== meta.sdkSessionId) {
-				readIndex().then((idx) => {
-					const m = idx.sessions.find((s) => s.id === id);
-					if (m) {
-						m.sdkSessionId = resolvedId;
-						writeIndex(idx);
-					}
-				});
-			}
-		} catch {
-			// sessionId not available — keep the fallback
-		}
-	});
+	activeStreamingLoop = startStreamingLoop(sdkSession, id, sender, persister)
+		.then(() => syncSdkSessionId(id, sdkSession))
+		.finally(() => {
+			activeStreamingLoop = null;
+		});
 
 	return id;
 }
@@ -391,8 +403,15 @@ export async function createSession(
 /**
  * Resumes a previously created session by loading its metadata and
  * re-attaching to the SDK session.
+ *
+ * If this session is already active (e.g. createSession was just called),
+ * returns true without creating a new SDK session — avoids duplicate loops.
  */
 export async function resumeSession(sessionId: string): Promise<boolean> {
+	if (activeSessionId === sessionId && activeSession) {
+		return true;
+	}
+
 	const index = await readIndex();
 	const meta = index.sessions.find((s) => s.id === sessionId);
 	if (!meta) return false;
@@ -411,7 +430,16 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 		activeSessionId = sessionId;
 
 		// Start the streaming loop to capture any incoming messages
-		startStreamingLoop(sdkSession, sessionId, sender, persister);
+		activeStreamingLoop = startStreamingLoop(
+			sdkSession,
+			sessionId,
+			sender,
+			persister,
+		)
+			.then(() => syncSdkSessionId(sessionId, sdkSession))
+			.finally(() => {
+				activeStreamingLoop = null;
+			});
 
 		return true;
 	} catch {
@@ -421,27 +449,59 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 
 /**
  * Sends a follow-up message in the active session.
- * The streaming loop must be running (or will be re-started).
+ *
+ * The SDK session is single-use: after the stream ends, it cannot accept
+ * more messages. So for each new message we:
+ *   1. Wait for any ongoing loop to finish
+ *   2. Create a fresh resumed SDK session using the latest sdkSessionId
+ *   3. Send the message and start a new streaming loop
  */
 export async function sendMessage(message: string): Promise<void> {
-	if (!activeSession || !activeSessionId) {
+	if (!activeSessionId) {
 		throw new Error("No active session");
 	}
 
-	await appendStoredMessageV2(activeSessionId, {
+	const internalId = activeSessionId;
+
+	await appendStoredMessageV2(internalId, {
 		version: 2,
 		role: "user",
 		blocks: [{ type: "text", text: message }],
 		timestamp: new Date().toISOString(),
 	});
 
-	// Send to SDK — this triggers a new assistant turn
-	await activeSession.send(message);
+	if (activeStreamingLoop) {
+		await activeStreamingLoop.catch(() => {});
+	}
 
-	// The existing streaming loop (from createSession or resumeSession)
-	// will pick up the new messages from session.stream().
-	// If the stream ended (result received), we need to restart it.
-	startStreamingLoop(activeSession, activeSessionId, sender, persister);
+	const index = await readIndex();
+	const meta = index.sessions.find((s) => s.id === internalId);
+	if (!meta) {
+		throw new Error(`Session metadata not found: ${internalId}`);
+	}
+
+	const settings = await loadSettings();
+	const { model } = settings.claude;
+	const claudePath = await findClaudeCli();
+
+	const sdkSession = unstable_v2_resumeSession(meta.sdkSessionId, {
+		model,
+		pathToClaudeCodeExecutable: claudePath,
+	});
+
+	activeSession = sdkSession;
+	await sdkSession.send(message);
+
+	activeStreamingLoop = startStreamingLoop(
+		sdkSession,
+		internalId,
+		sender,
+		persister,
+	)
+		.then(() => syncSdkSessionId(internalId, sdkSession))
+		.finally(() => {
+			activeStreamingLoop = null;
+		});
 }
 
 /**

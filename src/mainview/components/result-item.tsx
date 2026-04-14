@@ -5,9 +5,10 @@ import type { SearchResult } from "../providers/types";
 interface ResultItemProps {
 	result: SearchResult;
 	isSelected: boolean;
+	onSelect?: () => void;
 }
 
-export function ResultItem({ result, isSelected }: ResultItemProps) {
+export function ResultItem({ result, isSelected, onSelect }: ResultItemProps) {
 	const ref = useRef<HTMLButtonElement>(null);
 
 	useEffect(() => {
@@ -24,7 +25,7 @@ export function ResultItem({ result, isSelected }: ResultItemProps) {
 				"flex items-center gap-3 px-3 py-2.5 w-full text-left rounded-md transition-colors",
 				isSelected ? "bg-accent" : "hover:bg-accent/50",
 			)}
-			onClick={result.onSelect}
+			onClick={onSelect ?? result.onSelect}
 		>
 			{result.icon && (
 				<span className="shrink-0 text-muted-foreground">{result.icon}</span>

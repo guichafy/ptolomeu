@@ -40,6 +40,20 @@ interface AssistantChunk {
 	};
 }
 
+interface UserChunk {
+	type: "user";
+	message: {
+		content:
+			| string
+			| Array<{
+					type: string;
+					tool_use_id?: string;
+					content?: string | Array<{ type: string; text?: string }>;
+					is_error?: boolean;
+			  }>;
+	};
+}
+
 interface ToolProgressChunk {
 	type: "tool_progress";
 	tool_use_id: string;
@@ -73,6 +87,9 @@ export class StreamBlockAccumulator {
 	private toolInputJsons: Map<number, string> = new Map();
 	private thinkingStartTime: number | null = null;
 	private turnDone = false;
+	// Offset added to stream_event indices so that multi-turn blocks
+	// (e.g. after tool use) don't overwrite earlier turns' blocks.
+	private blockIndexOffset = 0;
 
 	/**
 	 * Process a raw SDK message chunk and update internal block state.
@@ -88,6 +105,8 @@ export class StreamBlockAccumulator {
 				return this.handleStreamEvent(msg as unknown as StreamEventChunk);
 			case "assistant":
 				return this.handleAssistantMessage(msg as unknown as AssistantChunk);
+			case "user":
+				return this.handleUserMessage(msg as unknown as UserChunk);
 			case "tool_progress":
 				return this.handleToolProgress(msg as unknown as ToolProgressChunk);
 			case "result":
@@ -127,6 +146,7 @@ export class StreamBlockAccumulator {
 		this.toolInputJsons.clear();
 		this.thinkingStartTime = null;
 		this.turnDone = false;
+		this.blockIndexOffset = 0;
 	}
 
 	/** Whether the current turn has completed. */
@@ -155,7 +175,7 @@ export class StreamBlockAccumulator {
 	}
 
 	private onContentBlockStart(evt: StreamEventChunk["event"]): boolean {
-		const index = evt.index ?? this.blocks.size;
+		const index = (evt.index ?? 0) + this.blockIndexOffset;
 		const block = evt.content_block;
 		if (!block) return false;
 
@@ -186,8 +206,8 @@ export class StreamBlockAccumulator {
 	}
 
 	private onContentBlockDelta(evt: StreamEventChunk["event"]): boolean {
-		const index = evt.index;
-		if (index === undefined) return false;
+		if (evt.index === undefined) return false;
+		const index = evt.index + this.blockIndexOffset;
 		const delta = evt.delta;
 		if (!delta) return false;
 
@@ -223,8 +243,8 @@ export class StreamBlockAccumulator {
 	}
 
 	private onContentBlockStop(evt: StreamEventChunk["event"]): boolean {
-		const index = evt.index;
-		if (index === undefined) return false;
+		if (evt.index === undefined) return false;
+		const index = evt.index + this.blockIndexOffset;
 
 		const existing = this.blocks.get(index);
 		if (!existing) return false;
@@ -255,31 +275,84 @@ export class StreamBlockAccumulator {
 	private handleAssistantMessage(msg: AssistantChunk): boolean {
 		if (!msg.message?.content) return false;
 
-		let idx = this.blocks.size;
-		for (const block of msg.message.content) {
+		// Fill in blocks that don't already exist from stream_events.
+		// Stream_event blocks take priority (they have richer state like
+		// tool status "running"), so we skip indices already occupied.
+		let added = false;
+		for (let i = 0; i < msg.message.content.length; i++) {
+			const targetIndex = i + this.blockIndexOffset;
+			if (this.blocks.has(targetIndex)) continue;
+
+			const block = msg.message.content[i];
 			switch (block.type) {
 				case "text":
-					this.blocks.set(idx++, { type: "text", text: block.text ?? "" });
+					this.blocks.set(targetIndex, {
+						type: "text",
+						text: block.text ?? "",
+					});
+					added = true;
 					break;
 				case "thinking":
-					this.blocks.set(idx++, {
+					this.blocks.set(targetIndex, {
 						type: "thinking",
 						thinking: block.thinking ?? "",
 					});
+					added = true;
 					break;
 				case "tool_use":
-					this.blocks.set(idx++, {
+					this.blocks.set(targetIndex, {
 						type: "tool_use",
 						id: block.id ?? "",
 						name: block.name ?? "",
 						input: block.input ?? {},
 						status: "done",
 					});
+					added = true;
 					break;
 			}
 		}
 
-		return idx > 0;
+		return added;
+	}
+
+	private handleUserMessage(msg: UserChunk): boolean {
+		if (typeof msg.message?.content === "string") return false;
+		if (!Array.isArray(msg.message?.content)) return false;
+
+		let added = false;
+		for (const block of msg.message.content) {
+			if (block.type === "tool_result" && block.tool_use_id) {
+				let contentStr = "";
+				if (typeof block.content === "string") {
+					contentStr = block.content;
+				} else if (Array.isArray(block.content)) {
+					contentStr = block.content
+						.filter(
+							(b): b is { type: string; text: string } =>
+								b.type === "text" && typeof b.text === "string",
+						)
+						.map((b) => b.text)
+						.join("");
+				}
+				const idx = this.blocks.size;
+				this.blocks.set(idx, {
+					type: "tool_result",
+					toolUseId: block.tool_use_id,
+					content: contentStr,
+					isError: block.is_error ?? false,
+				});
+				added = true;
+			}
+		}
+
+		// After tool results, the next stream_events will be a new assistant
+		// turn with indices starting from 0. Update offset so they don't
+		// overwrite blocks from previous turns.
+		if (added) {
+			this.blockIndexOffset = this.blocks.size;
+		}
+
+		return added;
 	}
 
 	private handleToolProgress(msg: ToolProgressChunk): boolean {

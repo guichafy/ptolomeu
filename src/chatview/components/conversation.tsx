@@ -1,9 +1,16 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+	Fragment,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { pairToolResults } from "../lib/pair-tool-blocks";
 import type { ChatBlock, ChatMessage, SessionState } from "../types";
 import { MarkdownContent } from "./blocks/markdown-content";
 import { ReasoningBlock } from "./blocks/reasoning-block";
-import { ToolResultBlock } from "./blocks/tool-result-block";
-import { ToolUseBlock } from "./blocks/tool-use-block";
+import { ToolInvocationBlock } from "./blocks/tool-invocation-block";
 import { Loader } from "./loader";
 import { Message } from "./message";
 import { TurnMeta } from "./turn-meta";
@@ -58,6 +65,11 @@ export function Conversation({
 	const showLoader = isStreaming && streamingBlocks.length === 0;
 	const showStreamingBlocks = streamingBlocks.length > 0;
 
+	const streamingResultMap = useMemo(
+		() => pairToolResults(streamingBlocks),
+		[streamingBlocks],
+	);
+
 	return (
 		<div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
 			{messages.length === 0 && !isStreaming && (
@@ -84,47 +96,48 @@ export function Conversation({
 				</Fragment>
 			))}
 
-			{/* Streaming blocks (assistant response in progress) */}
 			{showStreamingBlocks && (
-				<div className="mb-3 text-left">
-					<div className="max-w-full">
-						{streamingBlocks.map((block, i) => {
-							const key = `streaming-block-${i}`;
-							switch (block.type) {
-								case "text":
-									return <MarkdownContent key={key} content={block.text} />;
-								case "thinking":
-									return (
-										<ReasoningBlock
-											key={key}
-											thinking={block.thinking}
-											durationMs={block.durationMs}
-											isStreaming
-										/>
-									);
-								case "tool_use":
-									return (
-										<ToolUseBlock
-											key={key}
-											name={block.name}
-											input={block.input}
-											status={block.status}
-											elapsedSeconds={block.elapsedSeconds}
-										/>
-									);
-								case "tool_result":
-									return (
-										<ToolResultBlock
-											key={key}
-											content={block.content}
-											isError={block.isError}
-										/>
-									);
-								default:
-									return null;
+				<div className="mb-3 max-w-full text-left">
+					{streamingBlocks.map((block, i) => {
+						const key = `streaming-block-${i}`;
+						switch (block.type) {
+							case "text":
+								return <MarkdownContent key={key} content={block.text} />;
+							case "thinking":
+								return (
+									<ReasoningBlock
+										key={key}
+										thinking={block.thinking}
+										durationMs={block.durationMs}
+										isStreaming
+									/>
+								);
+							case "tool_use": {
+								const paired = streamingResultMap.get(block.id);
+								return (
+									<ToolInvocationBlock
+										key={key}
+										name={block.name}
+										input={block.input}
+										status={block.status}
+										elapsedSeconds={block.elapsedSeconds}
+										result={
+											paired
+												? {
+														content: paired.content,
+														isError: paired.isError,
+													}
+												: undefined
+										}
+									/>
+								);
 							}
-						})}
-					</div>
+							case "tool_result":
+								return null;
+							default:
+								return null;
+						}
+					})}
 				</div>
 			)}
 
