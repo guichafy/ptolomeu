@@ -73,6 +73,22 @@ function PaletteContent() {
 		[setLastSearchCached],
 	);
 
+	const clearPalette = useCallback(() => {
+		setQuery("");
+		setResults([]);
+		setError(null);
+		setSelectedIndex(0);
+		resultsQueryRef.current = "";
+	}, []);
+
+	const selectResult = useCallback(
+		(result: SearchResult) => {
+			result.onSelect();
+			clearPalette();
+		},
+		[clearPalette],
+	);
+
 	const handleSearch = useCallback(async () => {
 		abortRef.current?.abort();
 		const controller = new AbortController();
@@ -174,11 +190,7 @@ function PaletteContent() {
 			}
 		}
 		if (e.key === "Escape") {
-			setQuery("");
-			setResults([]);
-			setError(null);
-			setSelectedIndex(0);
-			resultsQueryRef.current = "";
+			clearPalette();
 			return;
 		}
 		if (e.key === "Tab") {
@@ -202,7 +214,7 @@ function PaletteContent() {
 		if (e.key === "Enter") {
 			const resultsAreFresh = resultsQueryRef.current === query;
 			if (resultsAreFresh && results[selectedIndex]) {
-				results[selectedIndex].onSelect();
+				selectResult(results[selectedIndex]);
 			} else if (activeProvider.id !== "calc" && activeProvider.id !== "apps") {
 				handleSearch();
 			}
@@ -256,6 +268,7 @@ function PaletteContent() {
 										key={result.id}
 										result={result}
 										isSelected={i === selectedIndex}
+										onSelect={() => selectResult(result)}
 									/>
 								))}
 							</div>

@@ -36,8 +36,15 @@ export function useChatSession() {
 		(sid: string) => {
 			setSessionId(sid);
 			loadMessages(sid);
+			// Optimistically show the loader: for a freshly created session the
+			// backend is already streaming, but early SDK chunks (system,
+			// rate_limit_event) don't produce blocks so sessionState would
+			// otherwise remain "idle" until the first real content arrives.
+			// onEnd will flip back to "idle" if there's nothing to stream.
+			setSessionState("streaming");
 			rpc.request.claudeResumeSession({ sessionId: sid }).catch((err) => {
 				console.error("[chat] Failed to resume session:", err);
+				setSessionState("error");
 			});
 		},
 		[loadMessages],
@@ -50,21 +57,44 @@ export function useChatSession() {
 		return () => onOpenSession(() => {});
 	}, [resumeSession]);
 
-	// Register stream handlers
+	const flushAccumulator = useCallback(
+		(meta?: {
+			cost?: number;
+			durationMs?: number;
+			tokenUsage?: { input: number; output: number };
+		}) => {
+			const accumulator = accumulatorRef.current;
+			const { blocks: finalBlocks } = accumulator.finalize();
+
+			if (finalBlocks.length > 0) {
+				const assistantMsg: ChatMessage = {
+					id: `streaming-${Date.now()}`,
+					role: "assistant",
+					blocks: finalBlocks,
+					timestamp: new Date().toISOString(),
+					...(meta?.cost != null && { cost: meta.cost }),
+					...(meta?.durationMs != null && { durationMs: meta.durationMs }),
+					...(meta?.tokenUsage && { tokenUsage: meta.tokenUsage }),
+				};
+				setMessages((prev) => [...prev, assistantMsg]);
+			}
+
+			accumulator.reset();
+			setStreamingBlocks([]);
+		},
+		[],
+	);
+
 	useEffect(() => {
 		setStreamHandlers({
 			onChunk: (args) => {
 				if (args.sessionId !== sessionIdRef.current) return;
 
 				const accumulator = accumulatorRef.current;
-				const changed = accumulator.processChunk(args.chunk);
+				if (!accumulator.processChunk(args.chunk)) return;
 
-				if (changed) {
-					setStreamingBlocks([...accumulator.getStreamingBlocks()]);
-				}
-
-				// Determine session state based on current blocks
 				const blocks = accumulator.getStreamingBlocks();
+				setStreamingBlocks([...blocks]);
 				const hasRunningTool = blocks.some(
 					(b) => b.type === "tool_use" && b.status === "running",
 				);
@@ -73,28 +103,22 @@ export function useChatSession() {
 			onEnd: (args) => {
 				if (args.sessionId !== sessionIdRef.current) return;
 
-				const accumulator = accumulatorRef.current;
-				accumulator.finalize();
-				accumulator.reset();
-				setStreamingBlocks([]);
+				flushAccumulator({
+					cost: args.result.totalCostUsd,
+					durationMs: args.result.durationMs,
+					tokenUsage: args.result.usage,
+				});
 				setSessionState("idle");
-
-				// Reload persisted messages
-				const sid = sessionIdRef.current;
-				if (sid) {
-					loadMessages(sid);
-				}
 			},
 			onError: (args) => {
 				if (args.sessionId !== sessionIdRef.current) return;
 
-				const accumulator = accumulatorRef.current;
-				accumulator.reset();
+				accumulatorRef.current.reset();
 				setStreamingBlocks([]);
 				setSessionState("error");
 			},
 		});
-	}, [loadMessages]);
+	}, [flushAccumulator]);
 
 	const sendMessage = useCallback(async (text: string) => {
 		if (!text.trim() || !sessionIdRef.current) return;
@@ -124,21 +148,12 @@ export function useChatSession() {
 	const stopGeneration = useCallback(async () => {
 		try {
 			await rpc.request.claudeStopGeneration();
-			const accumulator = accumulatorRef.current;
-			accumulator.finalize();
-			accumulator.reset();
-			setStreamingBlocks([]);
+			flushAccumulator();
 			setSessionState("idle");
-
-			// Reload messages to pick up any partial response that was saved
-			const sid = sessionIdRef.current;
-			if (sid) {
-				loadMessages(sid);
-			}
 		} catch {
 			// ignore
 		}
-	}, [loadMessages]);
+	}, [flushAccumulator]);
 
 	return {
 		sessionId,

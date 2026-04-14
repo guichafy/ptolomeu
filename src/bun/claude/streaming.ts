@@ -67,24 +67,101 @@ export type MessagePersister = {
 // ---------------------------------------------------------------------------
 
 /**
- * Extracts text content from an SDKAssistantMessage.
- *
- * The `message.content` array contains blocks; text blocks have
- * `{ type: "text", text: string }`.
+ * Extracts all structured content blocks from a complete SDKAssistantMessage.
+ * Returns text, thinking, and tool_use blocks for persistence.
  */
-function extractTextFromAssistantMessage(msg: SDKMessage): string | null {
+function extractBlocksFromAssistantMessage(
+	msg: SDKMessage,
+): PersistBlock[] | null {
 	if (msg.type !== "assistant") return null;
 	const assistantMsg = msg as {
 		type: "assistant";
-		message: { content: Array<{ type: string; text?: string }> };
+		message: {
+			content: Array<{
+				type: string;
+				text?: string;
+				thinking?: string;
+				id?: string;
+				name?: string;
+				input?: unknown;
+			}>;
+		};
 	};
-	const parts: string[] = [];
+	const blocks: PersistBlock[] = [];
 	for (const block of assistantMsg.message.content) {
-		if (block.type === "text" && typeof block.text === "string") {
-			parts.push(block.text);
+		switch (block.type) {
+			case "text":
+				if (typeof block.text === "string" && block.text) {
+					blocks.push({ type: "text", text: block.text });
+				}
+				break;
+			case "thinking":
+				if (typeof block.thinking === "string" && block.thinking) {
+					blocks.push({ type: "thinking", thinking: block.thinking });
+				}
+				break;
+			case "tool_use":
+				blocks.push({
+					type: "tool_use",
+					id: block.id ?? "",
+					name: block.name ?? "",
+					input: block.input ?? {},
+					status: "done",
+				});
+				break;
 		}
 	}
-	return parts.length > 0 ? parts.join("") : null;
+	return blocks.length > 0 ? blocks : null;
+}
+
+/**
+ * Extracts tool_result blocks from synthetic SDK user messages.
+ * These carry the output of tool executions.
+ */
+function extractToolResultsFromUserMessage(
+	msg: SDKMessage,
+): PersistBlock[] | null {
+	if (msg.type !== "user") return null;
+	const userMsg = msg as {
+		type: "user";
+		message: {
+			content:
+				| string
+				| Array<{
+						type: string;
+						tool_use_id?: string;
+						content?: string | Array<{ type: string; text?: string }>;
+						is_error?: boolean;
+				  }>;
+		};
+	};
+	if (typeof userMsg.message?.content === "string") return null;
+	if (!Array.isArray(userMsg.message?.content)) return null;
+
+	const blocks: PersistBlock[] = [];
+	for (const block of userMsg.message.content) {
+		if (block.type === "tool_result" && block.tool_use_id) {
+			let contentStr = "";
+			if (typeof block.content === "string") {
+				contentStr = block.content;
+			} else if (Array.isArray(block.content)) {
+				contentStr = block.content
+					.filter(
+						(b): b is { type: string; text: string } =>
+							b.type === "text" && typeof b.text === "string",
+					)
+					.map((b) => b.text)
+					.join("");
+			}
+			blocks.push({
+				type: "tool_result",
+				toolUseId: block.tool_use_id,
+				content: contentStr,
+				isError: block.is_error ?? false,
+			});
+		}
+	}
+	return blocks.length > 0 ? blocks : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,40 +182,87 @@ export async function startStreamingLoop(
 	sender: StreamMessageSender,
 	persister: MessagePersister,
 ): Promise<void> {
-	// Accumulate assistant text across potentially multiple assistant messages
-	// within a single turn.
-	let accumulatedText = "";
+	// Thinking blocks come from stream_event deltas (the SDK omits them
+	// from the complete assistant message).
+	let accumulatedBlocks: PersistBlock[] = [];
+	const toolElapsed = new Map<string, number>();
+	let currentThinking = "";
+	let thinkingStartTime: number | null = null;
+	const pendingThinkingBlocks: PersistBlock[] = [];
 
 	try {
 		for await (const msg of session.stream()) {
-			// Forward every message as a chunk to the renderer
 			sender.sendChunk(sessionId, msg);
 
-			// Collect text from full assistant messages
-			const text = extractTextFromAssistantMessage(msg);
-			if (text !== null) {
-				accumulatedText += text;
-			}
-
-			// Collect text from partial (streaming) assistant messages.
-			// SDKPartialAssistantMessage carries a BetaRawMessageStreamEvent;
-			// when the event type is content_block_delta with a text_delta we
-			// can extract incremental text.
+			// Track thinking blocks from stream_event deltas.
+			// These may not appear in the complete assistant message.
 			if (msg.type === "stream_event") {
 				const partial = msg as {
 					type: "stream_event";
-					event: { type: string; delta?: { type: string; text?: string } };
+					event: {
+						type: string;
+						index?: number;
+						content_block?: { type: string };
+						delta?: { type: string; thinking?: string };
+					};
 				};
+				const evt = partial.event;
+
 				if (
-					partial.event.type === "content_block_delta" &&
-					partial.event.delta?.type === "text_delta" &&
-					typeof partial.event.delta.text === "string"
+					evt.type === "content_block_start" &&
+					evt.content_block?.type === "thinking"
 				) {
-					accumulatedText += partial.event.delta.text;
+					currentThinking = "";
+					thinkingStartTime = Date.now();
+				} else if (
+					evt.type === "content_block_delta" &&
+					evt.delta?.type === "thinking_delta" &&
+					typeof evt.delta.thinking === "string"
+				) {
+					currentThinking += evt.delta.thinking;
+				} else if (evt.type === "content_block_stop" && currentThinking) {
+					const durationMs = thinkingStartTime
+						? Date.now() - thinkingStartTime
+						: undefined;
+					pendingThinkingBlocks.push({
+						type: "thinking",
+						thinking: currentThinking,
+						durationMs,
+					});
+					currentThinking = "";
+					thinkingStartTime = null;
 				}
 			}
 
-			// When we receive a result message the turn is over.
+			// Collect structured blocks from complete assistant messages
+			const assistantBlocks = extractBlocksFromAssistantMessage(msg);
+			if (assistantBlocks !== null) {
+				// Check if assistant message already has thinking blocks
+				const hasThinking = assistantBlocks.some((b) => b.type === "thinking");
+				if (!hasThinking && pendingThinkingBlocks.length > 0) {
+					// Prepend stream-accumulated thinking blocks
+					accumulatedBlocks.push(...pendingThinkingBlocks);
+				}
+				accumulatedBlocks.push(...assistantBlocks);
+				pendingThinkingBlocks.length = 0;
+			}
+
+			// Collect tool_result blocks from synthetic user messages
+			const toolResults = extractToolResultsFromUserMessage(msg);
+			if (toolResults !== null) {
+				accumulatedBlocks.push(...toolResults);
+			}
+
+			// Track tool elapsed time from progress events
+			if (msg.type === "tool_progress") {
+				const progress = msg as {
+					type: "tool_progress";
+					tool_use_id: string;
+					elapsed_time_seconds: number;
+				};
+				toolElapsed.set(progress.tool_use_id, progress.elapsed_time_seconds);
+			}
+
 			if (msg.type === "result") {
 				const result = msg as {
 					type: "result";
@@ -149,7 +273,6 @@ export async function startStreamingLoop(
 					usage?: { input_tokens?: number; output_tokens?: number };
 				};
 
-				// Build metadata from the SDK result
 				const meta: ResultMeta = {};
 				if (typeof result.total_cost_usd === "number") {
 					meta.totalCostUsd = result.total_cost_usd;
@@ -165,6 +288,35 @@ export async function startStreamingLoop(
 					}
 				}
 
+				if (pendingThinkingBlocks.length > 0) {
+					accumulatedBlocks.unshift(...pendingThinkingBlocks);
+					pendingThinkingBlocks.length = 0;
+				}
+
+				for (const block of accumulatedBlocks) {
+					if (block.type === "tool_use" && toolElapsed.has(block.id)) {
+						block.elapsedSeconds = toolElapsed.get(block.id);
+					}
+				}
+
+				// Persist BEFORE sendEnd so the frontend's loadMessages sees the
+				// new message if it re-reads during the onEnd handler.
+				if (accumulatedBlocks.length > 0) {
+					await persister.appendMessage(
+						sessionId,
+						"assistant",
+						accumulatedBlocks,
+						meta,
+					);
+				} else if (result.result) {
+					await persister.appendMessage(
+						sessionId,
+						"assistant",
+						[{ type: "text", text: result.result }],
+						meta,
+					);
+				}
+
 				sender.sendEnd(sessionId, {
 					subtype: result.subtype,
 					result: result.result,
@@ -173,35 +325,30 @@ export async function startStreamingLoop(
 					usage: meta.usage,
 				});
 
-				// Persist accumulated assistant text (or the result string as fallback)
-				const textToPersist = accumulatedText || result.result || "";
-				if (textToPersist) {
-					const blocks: PersistBlock[] = [
-						{ type: "text", text: textToPersist },
-					];
-					await persister.appendMessage(sessionId, "assistant", blocks, meta);
-				}
-
-				// Reset for a potential next turn (the generator may continue
-				// if the caller sends follow-up messages).
-				accumulatedText = "";
+				accumulatedBlocks = [];
+				toolElapsed.clear();
 			}
 		}
 	} catch (err) {
 		const errorMessage =
 			err instanceof Error ? err.message : "Unknown streaming error";
-		sender.sendError(sessionId, errorMessage);
 
-		// Still try to persist whatever we collected so far
-		if (accumulatedText) {
+		if (pendingThinkingBlocks.length > 0) {
+			accumulatedBlocks.unshift(...pendingThinkingBlocks);
+		}
+
+		if (accumulatedBlocks.length > 0) {
 			try {
-				const blocks: PersistBlock[] = [
-					{ type: "text", text: accumulatedText },
-				];
-				await persister.appendMessage(sessionId, "assistant", blocks);
+				await persister.appendMessage(
+					sessionId,
+					"assistant",
+					accumulatedBlocks,
+				);
 			} catch {
-				// Best-effort persistence — do not mask the original error
+				// Best-effort — don't mask the original error
 			}
 		}
+
+		sender.sendError(sessionId, errorMessage);
 	}
 }

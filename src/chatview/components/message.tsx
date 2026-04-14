@@ -1,9 +1,10 @@
+import { useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { pairToolResults } from "../lib/pair-tool-blocks";
 import type { ChatMessage } from "../types";
 import { MarkdownContent } from "./blocks/markdown-content";
 import { ReasoningBlock } from "./blocks/reasoning-block";
-import { ToolResultBlock } from "./blocks/tool-result-block";
-import { ToolUseBlock } from "./blocks/tool-use-block";
+import { ToolInvocationBlock } from "./blocks/tool-invocation-block";
 
 interface MessageProps {
 	message: ChatMessage;
@@ -32,6 +33,11 @@ function UserMessage({ message }: { message: ChatMessage }) {
 }
 
 function AssistantMessage({ message }: { message: ChatMessage }) {
+	const resultMap = useMemo(
+		() => pairToolResults(message.blocks),
+		[message.blocks],
+	);
+
 	return (
 		<div className="mb-3 text-left">
 			<div className={cn("max-w-full")}>
@@ -48,24 +54,25 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
 									durationMs={block.durationMs}
 								/>
 							);
-						case "tool_use":
+						case "tool_use": {
+							const paired = resultMap.get(block.id);
 							return (
-								<ToolUseBlock
+								<ToolInvocationBlock
 									key={key}
 									name={block.name}
 									input={block.input}
 									status={block.status}
 									elapsedSeconds={block.elapsedSeconds}
+									result={
+										paired
+											? { content: paired.content, isError: paired.isError }
+											: undefined
+									}
 								/>
 							);
+						}
 						case "tool_result":
-							return (
-								<ToolResultBlock
-									key={key}
-									content={block.content}
-									isError={block.isError}
-								/>
-							);
+							return null;
 						default:
 							return null;
 					}
