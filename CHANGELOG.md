@@ -1,3 +1,25 @@
+# [1.3.0](https://github.com/guichafy/ptolomeu/compare/v1.2.0...v1.3.0) (2026-04-14)
+
+
+### Bug Fixes
+
+* **chat:** instrument claude session flow and resolve multi-session bugs ([542ec82](https://github.com/guichafy/ptolomeu/commit/542ec82e6e7acaea8dc54c4a7f8f811772840b21))
+* **chat:** persist structured blocks, unify tool display, fix multi-turn streaming ([a4d8d02](https://github.com/guichafy/ptolomeu/commit/a4d8d02dd1327bd4763385714510917ca8f5145e))
+* **claude:** split rpc per window and push session list from bun ([b7dda6a](https://github.com/guichafy/ptolomeu/commit/b7dda6a7e26ddad6d17a55832d40d64937f156bf))
+* **dev:** replace Vite dev server with build --watch to fix blank screen on first launch ([8f1a195](https://github.com/guichafy/ptolomeu/commit/8f1a1950a18fd00c7ee96ab8856ff426c5e63fd1))
+* **settings:** add frontend-design plugin to enabled plugins ([fe29478](https://github.com/guichafy/ptolomeu/commit/fe29478ffbcf569f17d4695c1fc03eecc38a9251))
+* **ui:** fix Tailwind v4 source detection and refine settings design ([4537794](https://github.com/guichafy/ptolomeu/commit/4537794703ed7cd9d8ac1d806ce59de5ab62484e))
+* **ui:** scroll acompanhar seleção ao navegar resultados com setas ([06d1672](https://github.com/guichafy/ptolomeu/commit/06d16724aeb93cfccb9e08350bc69ac72b0eb6bc))
+* **ui:** use native titlebar for chat window dragging and close ([682ff45](https://github.com/guichafy/ptolomeu/commit/682ff45c05753321498303817cb701382d62b7e2))
+
+
+### Features
+
+* **analytics:** integrate PostHog for anonymous usage analytics ([8a9610f](https://github.com/guichafy/ptolomeu/commit/8a9610f902aae7ed60a6611a9f4b81917370174d))
+* **chat:** load message history and resume SDK session from URL params ([10eb3c3](https://github.com/guichafy/ptolomeu/commit/10eb3c3c3af12e501e586edde75828894fbac9e0))
+* **claude:** add Claude chat integration with streaming, auth, and dedicated chat window ([c18710f](https://github.com/guichafy/ptolomeu/commit/c18710f162e3adb942aa4b8c03f565e3679c5fff))
+* **claude:** add SDK dependency and register claude plugin ([163212a](https://github.com/guichafy/ptolomeu/commit/163212a0acf528fe9a34b1cc0bb04d5a99edf8ed))
+
 # [1.2.0](https://github.com/guichafy/ptolomeu/compare/v1.1.0...v1.2.0) (2026-04-12)
 
 
