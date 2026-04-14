@@ -1,6 +1,15 @@
 import type { ChatBlock, ThinkingBlock, ToolUseBlock } from "../types";
 
 // ---------------------------------------------------------------------------
+// Logging
+// ---------------------------------------------------------------------------
+
+const VERBOSE = import.meta.env.VITE_CLAUDE_LOG_VERBOSE === "1";
+const verbose = (...args: unknown[]) => {
+	if (VERBOSE) console.log(...args);
+};
+
+// ---------------------------------------------------------------------------
 // Stream event shape helpers (typed from the raw SDK chunks)
 // ---------------------------------------------------------------------------
 
@@ -100,6 +109,8 @@ export class StreamBlockAccumulator {
 		const msg = chunk as Record<string, unknown>;
 		const type = msg.type as string;
 
+		verbose(`[chat:parser] processChunk: type=${type}`);
+
 		switch (type) {
 			case "stream_event":
 				return this.handleStreamEvent(msg as unknown as StreamEventChunk);
@@ -142,6 +153,7 @@ export class StreamBlockAccumulator {
 
 	/** Reset for next turn. */
 	reset(): void {
+		verbose("[chat:parser] reset");
 		this.blocks.clear();
 		this.toolInputJsons.clear();
 		this.thinkingStartTime = null;
@@ -178,6 +190,10 @@ export class StreamBlockAccumulator {
 		const index = (evt.index ?? 0) + this.blockIndexOffset;
 		const block = evt.content_block;
 		if (!block) return false;
+
+		verbose(
+			`[chat:parser] block start: idx=${index} offset=${this.blockIndexOffset} type=${block.type}${block.name ? ` name=${block.name}` : ""}`,
+		);
 
 		switch (block.type) {
 			case "text":
@@ -249,6 +265,8 @@ export class StreamBlockAccumulator {
 		const existing = this.blocks.get(index);
 		if (!existing) return false;
 
+		verbose(`[chat:parser] block stop: idx=${index} type=${existing.type}`);
+
 		// Finalize thinking block with duration
 		if (existing.type === "thinking" && this.thinkingStartTime) {
 			(existing as ThinkingBlock).durationMs =
@@ -312,6 +330,10 @@ export class StreamBlockAccumulator {
 			}
 		}
 
+		verbose(
+			`[chat:parser] assistant message: added=${added} contentLength=${msg.message.content.length} offset=${this.blockIndexOffset}`,
+		);
+
 		return added;
 	}
 
@@ -350,6 +372,9 @@ export class StreamBlockAccumulator {
 		// overwrite blocks from previous turns.
 		if (added) {
 			this.blockIndexOffset = this.blocks.size;
+			console.log(
+				`[chat:parser] blockIndexOffset updated: offset=${this.blockIndexOffset} reason=tool_result`,
+			);
 		}
 
 		return added;
@@ -378,6 +403,9 @@ export class StreamBlockAccumulator {
 				block.status = "done";
 			}
 		}
+		console.log(
+			`[chat:parser] turn done: blocks=${this.blocks.size} offset=${this.blockIndexOffset}`,
+		);
 		return true;
 	}
 }

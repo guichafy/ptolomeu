@@ -16,18 +16,36 @@ import type {
 import { startStreamingLoop } from "./streaming";
 
 // ---------------------------------------------------------------------------
+// Logging
+// ---------------------------------------------------------------------------
+
+const VERBOSE = process.env.CLAUDE_LOG_VERBOSE === "1";
+const verbose = (...args: unknown[]) => {
+	if (VERBOSE) console.log(...args);
+};
+
+function previewText(text: string, max = 60): string {
+	const cleaned = text.replace(/\s+/g, " ").trim();
+	return cleaned.length <= max ? cleaned : `${cleaned.slice(0, max)}...`;
+}
+
+// ---------------------------------------------------------------------------
 // Claude CLI path resolution
 // ---------------------------------------------------------------------------
 
 let cachedClaudePath: string | null = null;
 
 async function findClaudeCli(): Promise<string> {
-	if (cachedClaudePath) return cachedClaudePath;
+	if (cachedClaudePath) {
+		verbose(`[claude:session] claude CLI (cached): path=${cachedClaudePath}`);
+		return cachedClaudePath;
+	}
 
 	// 1. Try Bun.which (checks PATH)
 	const fromPath = Bun.which("claude");
 	if (fromPath) {
 		cachedClaudePath = fromPath;
+		verbose(`[claude:session] claude CLI resolved via PATH: path=${fromPath}`);
 		return fromPath;
 	}
 
@@ -43,10 +61,14 @@ async function findClaudeCli(): Promise<string> {
 		const file = Bun.file(candidate);
 		if (await file.exists()) {
 			cachedClaudePath = candidate;
+			verbose(
+				`[claude:session] claude CLI resolved via fallback: path=${candidate}`,
+			);
 			return candidate;
 		}
 	}
 
+	console.error("[claude:session] claude CLI not found in PATH or fallbacks");
 	throw new Error(
 		"Claude Code CLI não encontrado. Instale com: npm install -g @anthropic-ai/claude-code",
 	);
@@ -297,6 +319,9 @@ async function syncSdkSessionId(
 		const idx = await readIndex();
 		const m = idx.sessions.find((s) => s.id === internalId);
 		if (m && m.sdkSessionId !== resolvedId) {
+			verbose(
+				`[claude:session] syncSdkSessionId: id=${internalId} old=${m.sdkSessionId} new=${resolvedId}`,
+			);
 			m.sdkSessionId = resolvedId;
 			await writeIndex(idx);
 		}
@@ -327,11 +352,22 @@ export async function createSession(
 	prompt: string,
 	cwd?: string,
 ): Promise<string> {
+	const t0 = Date.now();
 	const id = crypto.randomUUID();
+
+	console.log(
+		`[claude:session] createSession start: id=${id} cwd=${cwd ?? "null"} promptLength=${prompt.length}`,
+	);
+	verbose(
+		`[claude:session] createSession prompt preview: id=${id} prompt="${previewText(prompt)}"`,
+	);
 
 	// Load current settings for model and permission mode
 	const settings = await loadSettings();
 	const { model, permissionMode, authMode } = settings.claude;
+	verbose(
+		`[claude:session] createSession settings: model=${model} permissionMode=${permissionMode} authMode=${authMode}`,
+	);
 
 	// Resolve the Claude CLI path
 	const claudePath = await findClaudeCli();
@@ -343,8 +379,10 @@ export async function createSession(
 		pathToClaudeCodeExecutable: claudePath,
 		allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "LS"],
 	});
+	verbose(`[claude:session] SDK session created: id=${id}`);
 	// Send the initial prompt — the SDK session needs a user message to begin
 	await sdkSession.send(prompt);
+	verbose(`[claude:session] initial prompt sent: id=${id}`);
 
 	// The sessionId becomes available after the first message is received.
 	// We peek at the stream to capture it, then let the streaming loop
@@ -358,6 +396,9 @@ export async function createSession(
 		// once the stream yields a message with session_id.
 		sdkSessionId = id;
 	}
+	console.log(
+		`[claude:session] createSession ready: id=${id} sdkSessionId=${sdkSessionId}`,
+	);
 
 	// Store as active
 	activeSession = sdkSession;
@@ -389,6 +430,9 @@ export async function createSession(
 		blocks: [{ type: "text", text: prompt }],
 		timestamp: now,
 	});
+	verbose(
+		`[claude:session] metadata persisted: id=${id} title="${meta.title}"`,
+	);
 
 	// Start the streaming loop (fire-and-forget — it runs until the stream ends)
 	activeStreamingLoop = startStreamingLoop(sdkSession, id, sender, persister)
@@ -397,6 +441,9 @@ export async function createSession(
 			activeStreamingLoop = null;
 		});
 
+	console.log(
+		`[claude:session] createSession done: id=${id} (${Date.now() - t0}ms)`,
+	);
 	return id;
 }
 
@@ -408,13 +455,23 @@ export async function createSession(
  * returns true without creating a new SDK session — avoids duplicate loops.
  */
 export async function resumeSession(sessionId: string): Promise<boolean> {
+	console.log(`[claude:session] resumeSession start: id=${sessionId}`);
+
 	if (activeSessionId === sessionId && activeSession) {
+		console.log(
+			`[claude:session] resumeSession: id=${sessionId} already active, skipping`,
+		);
 		return true;
 	}
 
 	const index = await readIndex();
 	const meta = index.sessions.find((s) => s.id === sessionId);
-	if (!meta) return false;
+	if (!meta) {
+		console.error(
+			`[claude:session] resumeSession: metadata not found for id=${sessionId}`,
+		);
+		return false;
+	}
 
 	const settings = await loadSettings();
 	const { model } = settings.claude;
@@ -429,6 +486,10 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 		activeSession = sdkSession;
 		activeSessionId = sessionId;
 
+		console.log(
+			`[claude:session] resumeSession ready: id=${sessionId} sdkSessionId=${meta.sdkSessionId} model=${model}`,
+		);
+
 		// Start the streaming loop to capture any incoming messages
 		activeStreamingLoop = startStreamingLoop(
 			sdkSession,
@@ -442,7 +503,8 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 			});
 
 		return true;
-	} catch {
+	} catch (err) {
+		console.error("[claude:session] resumeSession failed:", err);
 		return false;
 	}
 }
@@ -458,10 +520,18 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
  */
 export async function sendMessage(message: string): Promise<void> {
 	if (!activeSessionId) {
+		console.error("[claude:session] sendMessage: no active session");
 		throw new Error("No active session");
 	}
 
 	const internalId = activeSessionId;
+
+	console.log(
+		`[claude:session] sendMessage start: sessionId=${internalId} length=${message.length}`,
+	);
+	verbose(
+		`[claude:session] sendMessage preview: sessionId=${internalId} message="${previewText(message)}"`,
+	);
 
 	await appendStoredMessageV2(internalId, {
 		version: 2,
@@ -471,12 +541,18 @@ export async function sendMessage(message: string): Promise<void> {
 	});
 
 	if (activeStreamingLoop) {
+		verbose(
+			`[claude:session] sendMessage: awaiting previous streaming loop for id=${internalId}`,
+		);
 		await activeStreamingLoop.catch(() => {});
 	}
 
 	const index = await readIndex();
 	const meta = index.sessions.find((s) => s.id === internalId);
 	if (!meta) {
+		console.error(
+			`[claude:session] sendMessage: metadata not found for id=${internalId}`,
+		);
 		throw new Error(`Session metadata not found: ${internalId}`);
 	}
 
@@ -488,9 +564,13 @@ export async function sendMessage(message: string): Promise<void> {
 		model,
 		pathToClaudeCodeExecutable: claudePath,
 	});
+	verbose(
+		`[claude:session] sendMessage: new SDK session resumed from sdkSessionId=${meta.sdkSessionId}`,
+	);
 
 	activeSession = sdkSession;
 	await sdkSession.send(message);
+	console.log(`[claude:session] sendMessage sent: sessionId=${internalId}`);
 
 	activeStreamingLoop = startStreamingLoop(
 		sdkSession,
@@ -508,13 +588,18 @@ export async function sendMessage(message: string): Promise<void> {
  * Stops the currently running generation by closing the SDK session.
  */
 export async function stopGeneration(): Promise<boolean> {
+	console.log(
+		`[claude:session] stopGeneration: activeId=${activeSessionId ?? "null"}`,
+	);
 	if (!activeSession) return false;
 
 	try {
 		activeSession.close();
 		activeSession = null;
+		console.log("[claude:session] stopGeneration: success");
 		return true;
-	} catch {
+	} catch (err) {
+		console.error("[claude:session] stopGeneration failed:", err);
 		return false;
 	}
 }
@@ -523,9 +608,15 @@ export async function stopGeneration(): Promise<boolean> {
  * Deletes a session's stored data and removes it from the index.
  */
 export async function deleteSession(sessionId: string): Promise<boolean> {
+	console.log(`[claude:session] deleteSession start: id=${sessionId}`);
 	const index = await readIndex();
 	const idx = index.sessions.findIndex((s) => s.id === sessionId);
-	if (idx === -1) return false;
+	if (idx === -1) {
+		console.log(
+			`[claude:session] deleteSession: id=${sessionId} not found in index`,
+		);
+		return false;
+	}
 
 	// If this is the active session, close it first
 	if (activeSessionId === sessionId && activeSession) {
@@ -551,6 +642,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 		// Best-effort cleanup
 	}
 
+	console.log(`[claude:session] deleteSession done: id=${sessionId}`);
 	return true;
 }
 

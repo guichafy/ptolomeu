@@ -377,6 +377,14 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 			claudeListSessions: async () => claudeListSessions(),
 			claudeCreateSession: async ({ prompt, cwd }) => {
 				const sessionId = await claudeCreateSession(prompt, cwd);
+				// Auto-open the chat window from the backend. Doing this
+				// in the renderer (via a follow-up claudeOpenChat RPC) is
+				// fragile because the mainview webview can be suspended
+				// after the previous chat window closes, swallowing the call.
+				console.log(
+					`[claude:rpc] claudeCreateSession: auto-opening chat for sessionId=${sessionId}`,
+				);
+				openChatCallback?.(sessionId);
 				return { sessionId };
 			},
 			claudeResumeSession: async ({ sessionId }) =>
@@ -395,6 +403,9 @@ export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 			claudeSetBedrock: async (config) => setBedrockConfig(config),
 			claudeGetBedrock: async () => getBedrockConfig(),
 			claudeOpenChat: async ({ sessionId }) => {
+				console.log(
+					`[claude:rpc] claudeOpenChat: sessionId=${sessionId} hasCallback=${openChatCallback !== null}`,
+				);
 				openChatCallback?.(sessionId);
 				return true;
 			},

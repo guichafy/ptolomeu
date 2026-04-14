@@ -1,5 +1,10 @@
 import { type ElectrobunRPCSchema, Electroview } from "electrobun/view";
 
+const VERBOSE = import.meta.env.VITE_CLAUDE_LOG_VERBOSE === "1";
+const verbose = (...args: unknown[]) => {
+	if (VERBOSE) console.log(...args);
+};
+
 export type GitHubSearchType = "repos" | "code" | "issues" | "users";
 
 export type CustomFilter =
@@ -245,9 +250,14 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 	};
 }
 
-let openSessionHandler:
-	| ((args: { sessionId: string }) => void)
-	| null = null;
+let openSessionHandler: ((args: { sessionId: string }) => void) | null = null;
+
+// Buffer for claudeOpenSession messages that arrive before the React tree
+// has mounted and registered a handler via onOpenSession. This happens when
+// the backend creates a new chat window and sends the sessionId before the
+// webview's JS has fully loaded. We deliver the buffered args as soon as a
+// handler is registered.
+let pendingOpenSession: { sessionId: string } | null = null;
 
 let streamChunkHandler:
 	| ((args: { sessionId: string; chunk: unknown }) => void)
@@ -293,16 +303,37 @@ const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 		messages: {
 			openPreferences: () => {},
 			claudeStreamChunk: (args) => {
+				const chunkType =
+					args.chunk && typeof args.chunk === "object" && "type" in args.chunk
+						? (args.chunk as { type: unknown }).type
+						: "unknown";
+				verbose(
+					`[chat:rpc] chunk: sessionId=${args.sessionId} type=${String(chunkType)}`,
+				);
 				streamChunkHandler?.(args);
 			},
 			claudeStreamEnd: (args) => {
+				console.log(
+					`[chat:rpc] end: sessionId=${args.sessionId} subtype=${args.result.subtype}`,
+				);
 				streamEndHandler?.(args);
 			},
 			claudeStreamError: (args) => {
+				console.error(
+					`[chat:rpc] error: sessionId=${args.sessionId} error=${args.error}`,
+				);
 				streamErrorHandler?.(args);
 			},
 			claudeOpenSession: (args) => {
-				openSessionHandler?.(args);
+				console.log(`[chat:rpc] openSession: sessionId=${args.sessionId}`);
+				if (openSessionHandler) {
+					openSessionHandler(args);
+				} else {
+					console.log(
+						`[chat:rpc] openSession buffered (handler not ready): sessionId=${args.sessionId}`,
+					);
+					pendingOpenSession = args;
+				}
 			},
 		},
 	},
@@ -312,6 +343,13 @@ new Electroview({ rpc: rpcInstance });
 
 export function onOpenSession(handler: (args: { sessionId: string }) => void) {
 	openSessionHandler = handler;
+	// Drain any message that arrived before the handler was registered.
+	if (pendingOpenSession) {
+		const pending = pendingOpenSession;
+		pendingOpenSession = null;
+		console.log(`[chat:rpc] openSession drain: sessionId=${pending.sessionId}`);
+		handler(pending);
+	}
 }
 
 export const rpc = rpcInstance;

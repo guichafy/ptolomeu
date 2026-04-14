@@ -1,6 +1,15 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 // ---------------------------------------------------------------------------
+// Logging
+// ---------------------------------------------------------------------------
+
+const VERBOSE = process.env.CLAUDE_LOG_VERBOSE === "1";
+const verbose = (...args: unknown[]) => {
+	if (VERBOSE) console.log(...args);
+};
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -182,6 +191,9 @@ export async function startStreamingLoop(
 	sender: StreamMessageSender,
 	persister: MessagePersister,
 ): Promise<void> {
+	const t0 = Date.now();
+	console.log(`[claude:stream] loop start: sessionId=${sessionId}`);
+
 	// Thinking blocks come from stream_event deltas (the SDK omits them
 	// from the complete assistant message).
 	let accumulatedBlocks: PersistBlock[] = [];
@@ -189,9 +201,15 @@ export async function startStreamingLoop(
 	let currentThinking = "";
 	let thinkingStartTime: number | null = null;
 	const pendingThinkingBlocks: PersistBlock[] = [];
+	let chunkCount = 0;
+	let resultCount = 0;
 
 	try {
 		for await (const msg of session.stream()) {
+			chunkCount++;
+			verbose(
+				`[claude:stream] chunk #${chunkCount}: sessionId=${sessionId} type=${msg.type}`,
+			);
 			sender.sendChunk(sessionId, msg);
 
 			// Track thinking blocks from stream_event deltas.
@@ -212,6 +230,7 @@ export async function startStreamingLoop(
 					evt.type === "content_block_start" &&
 					evt.content_block?.type === "thinking"
 				) {
+					verbose(`[claude:stream] thinking start: sessionId=${sessionId}`);
 					currentThinking = "";
 					thinkingStartTime = Date.now();
 				} else if (
@@ -224,6 +243,9 @@ export async function startStreamingLoop(
 					const durationMs = thinkingStartTime
 						? Date.now() - thinkingStartTime
 						: undefined;
+					verbose(
+						`[claude:stream] thinking stop: sessionId=${sessionId} durationMs=${durationMs} chars=${currentThinking.length}`,
+					);
 					pendingThinkingBlocks.push({
 						type: "thinking",
 						thinking: currentThinking,
@@ -245,12 +267,18 @@ export async function startStreamingLoop(
 				}
 				accumulatedBlocks.push(...assistantBlocks);
 				pendingThinkingBlocks.length = 0;
+				verbose(
+					`[claude:stream] assistant blocks extracted: sessionId=${sessionId} count=${assistantBlocks.length} types=[${assistantBlocks.map((b) => b.type).join(",")}]`,
+				);
 			}
 
 			// Collect tool_result blocks from synthetic user messages
 			const toolResults = extractToolResultsFromUserMessage(msg);
 			if (toolResults !== null) {
 				accumulatedBlocks.push(...toolResults);
+				verbose(
+					`[claude:stream] tool_result blocks: sessionId=${sessionId} count=${toolResults.length}`,
+				);
 			}
 
 			// Track tool elapsed time from progress events
@@ -261,9 +289,13 @@ export async function startStreamingLoop(
 					elapsed_time_seconds: number;
 				};
 				toolElapsed.set(progress.tool_use_id, progress.elapsed_time_seconds);
+				verbose(
+					`[claude:stream] tool_progress: id=${progress.tool_use_id} elapsed=${progress.elapsed_time_seconds}s`,
+				);
 			}
 
 			if (msg.type === "result") {
+				resultCount++;
 				const result = msg as {
 					type: "result";
 					subtype: string;
@@ -299,9 +331,16 @@ export async function startStreamingLoop(
 					}
 				}
 
+				console.log(
+					`[claude:stream] result: sessionId=${sessionId} subtype=${result.subtype} blocks=${accumulatedBlocks.length} cost=${meta.totalCostUsd ?? "?"} durationMs=${meta.durationMs ?? "?"} tokens=${meta.usage ? `${meta.usage.input}/${meta.usage.output}` : "?"}`,
+				);
+
 				// Persist BEFORE sendEnd so the frontend's loadMessages sees the
 				// new message if it re-reads during the onEnd handler.
 				if (accumulatedBlocks.length > 0) {
+					verbose(
+						`[claude:stream] persisting assistant message: sessionId=${sessionId} blocks=${accumulatedBlocks.length}`,
+					);
 					await persister.appendMessage(
 						sessionId,
 						"assistant",
@@ -309,6 +348,9 @@ export async function startStreamingLoop(
 						meta,
 					);
 				} else if (result.result) {
+					verbose(
+						`[claude:stream] persisting fallback text result: sessionId=${sessionId}`,
+					);
 					await persister.appendMessage(
 						sessionId,
 						"assistant",
@@ -317,6 +359,7 @@ export async function startStreamingLoop(
 					);
 				}
 
+				verbose(`[claude:stream] sendEnd: sessionId=${sessionId}`);
 				sender.sendEnd(sessionId, {
 					subtype: result.subtype,
 					result: result.result,
@@ -329,9 +372,18 @@ export async function startStreamingLoop(
 				toolElapsed.clear();
 			}
 		}
+
+		console.log(
+			`[claude:stream] loop end: sessionId=${sessionId} chunks=${chunkCount} results=${resultCount} (${Date.now() - t0}ms)`,
+		);
 	} catch (err) {
 		const errorMessage =
 			err instanceof Error ? err.message : "Unknown streaming error";
+
+		console.error(
+			`[claude:stream] loop error: sessionId=${sessionId} chunks=${chunkCount} (${Date.now() - t0}ms)`,
+			err,
+		);
 
 		if (pendingThinkingBlocks.length > 0) {
 			accumulatedBlocks.unshift(...pendingThinkingBlocks);
