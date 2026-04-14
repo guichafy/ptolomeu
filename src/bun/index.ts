@@ -1,11 +1,6 @@
 import { dlopen, FFIType } from "bun:ffi";
 import { join } from "node:path";
-import {
-	ApplicationMenu,
-	BrowserWindow,
-	Tray,
-	Utils,
-} from "electrobun/bun";
+import { ApplicationMenu, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics";
 import { rpc, setMainWindow, setOpenChatCallback } from "./rpc";
 import { loadSettings } from "./settings";
@@ -41,19 +36,31 @@ try {
 let chatWindow: InstanceType<typeof BrowserWindow> | null = null;
 
 function openChatWindow(sessionId?: string) {
+	console.log(
+		`[main] openChatWindow: sessionId=${sessionId ?? "null"} hasWindow=${chatWindow !== null}`,
+	);
+
 	if (chatWindow) {
 		// Window already exists — send sessionId via RPC and show it
 		try {
 			if (sessionId) {
+				console.log(
+					`[main] openChatWindow: reusing window, sending openSession sessionId=${sessionId}`,
+				);
 				rpc.send.claudeOpenSession({ sessionId });
 			}
 			chatWindow.show();
 			return;
-		} catch {
+		} catch (err) {
+			console.error(
+				"[main] openChatWindow: reuse failed, recreating window:",
+				err,
+			);
 			chatWindow = null;
 		}
 	}
 
+	console.log("[main] openChatWindow: creating new chat window");
 	chatWindow = new BrowserWindow({
 		title: "Ptolomeu — Chat",
 		url: "views://chatview/index.html",
@@ -75,9 +82,20 @@ function openChatWindow(sessionId?: string) {
 		rpc,
 	});
 
+	// Electrobun removes the window from its internal map on close, but our
+	// reference here would remain stale — causing the next open to take the
+	// "reuse" branch and silently fail. Clear the ref so we recreate.
+	chatWindow.on("close", () => {
+		console.log("[main] chatWindow closed, clearing reference");
+		chatWindow = null;
+	});
+
 	// Send sessionId via RPC after window is created
 	if (sessionId) {
 		setTimeout(() => {
+			console.log(
+				`[main] openChatWindow: sending openSession to new window sessionId=${sessionId}`,
+			);
 			rpc.send.claudeOpenSession({ sessionId });
 		}, 500);
 	}

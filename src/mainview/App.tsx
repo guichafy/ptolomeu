@@ -137,6 +137,24 @@ function PaletteContent() {
 		}
 	}, [activeProvider.id, handleSearch]);
 
+	// Re-fetch Claude recent sessions when the palette becomes visible again
+	// (hotkey / tray click). The native overlay hides/shows the window without
+	// remounting the React tree, so the useEffect above doesn't re-fire.
+	useEffect(() => {
+		const onVisible = () => {
+			if (document.hidden) return;
+			if (activeProvider.id === "claude" && !query.trim()) {
+				handleSearch();
+			}
+		};
+		document.addEventListener("visibilitychange", onVisible);
+		window.addEventListener("focus", onVisible);
+		return () => {
+			document.removeEventListener("visibilitychange", onVisible);
+			window.removeEventListener("focus", onVisible);
+		};
+	}, [activeProvider.id, query, handleSearch]);
+
 	const prevSubTypeRef = useRef(activeSubType);
 	useEffect(() => {
 		if (activeProvider.id !== "github") return;

@@ -31,19 +31,23 @@ export const claudeProvider: SearchProvider = {
 	icon: Bot,
 	placeholder: "Pergunte algo ao Claude...",
 	configComponent: ClaudeSection,
-	search: async (query) => {
+	search: async (query, signal) => {
 		// When query is empty, show recent sessions
 		if (!query.trim()) {
 			try {
 				const sessions = await rpc.request.claudeListSessions();
+				if (signal?.aborted) return [];
 				return sessions.map(sessionToResult);
 			} catch {
 				return [];
 			}
 		}
 
-		// With a query: show "create new session" option + filtered sessions
-		const results: SearchResult[] = [
+		// With a query: return "create new session" option immediately.
+		// Filtering stored sessions by title was nice-to-have but made every
+		// keystroke block on a RPC round-trip; users can clear the query to
+		// browse recent sessions instead.
+		return [
 			{
 				id: "claude-new",
 				title: query,
@@ -51,34 +55,22 @@ export const claudeProvider: SearchProvider = {
 				icon: createElement(Plus, { size: 16 }),
 				onSelect: async () => {
 					try {
+						console.log(
+							`[claude] createSession from palette: prompt length=${query.length}`,
+						);
+						// Backend auto-opens the chat window — no follow-up
+						// claudeOpenChat call needed (see src/bun/rpc.ts).
 						const { sessionId } = await rpc.request.claudeCreateSession({
 							prompt: query,
 						});
-						rpc.request.claudeOpenChat({ sessionId });
+						console.log(
+							`[claude] new session created from palette: sessionId=${sessionId}`,
+						);
 					} catch (err) {
 						console.error("[claude] Failed to create session:", err);
 					}
 				},
 			},
 		];
-
-		// Also filter existing sessions by title
-		try {
-			const sessions = await rpc.request.claudeListSessions();
-			const lower = query.toLowerCase();
-			const filtered = sessions
-				.filter(
-					(s) =>
-						s.title.toLowerCase().includes(lower) ||
-						s.lastMessage.toLowerCase().includes(lower),
-				)
-				.slice(0, 5)
-				.map(sessionToResult);
-			results.push(...filtered);
-		} catch {
-			// Ignore — show at least the "new session" option
-		}
-
-		return results;
 	},
 };
