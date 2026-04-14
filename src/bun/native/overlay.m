@@ -42,6 +42,13 @@ static OverlayWindowDelegate *overlayDelegate = nil;
 static NSWindow *registeredWindow = nil;
 static EventHotKeyRef hotKeyRef = NULL;
 
+// Callback invoked from native back into bun whenever the overlay window
+// transitions from hidden to visible (hotkey-triggered show). Bun registers
+// this via `setWindowShowCallback` — the mainview uses it to refresh the
+// Claude session list without depending on webview-side visibility events.
+typedef void (*WindowShowCallback)(void);
+static WindowShowCallback windowShowCallback = NULL;
+
 // Forward declaration
 void makeWindowOverlay(void *nsWindowPtr);
 
@@ -56,9 +63,16 @@ static OSStatus hotkeyHandler(EventHandlerCallRef nextHandler, EventRef event, v
             });
         } else {
             makeWindowOverlay((__bridge void *)registeredWindow);
+            if (windowShowCallback) {
+                windowShowCallback();
+            }
         }
     }
     return noErr;
+}
+
+void setWindowShowCallback(void *cb) {
+    windowShowCallback = (WindowShowCallback)cb;
 }
 
 void makeWindowOverlay(void *nsWindowPtr) {

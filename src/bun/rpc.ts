@@ -130,6 +130,7 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			claudeStreamError: { sessionId: string; error: string };
 			claudeOpenSession: { sessionId: string };
+			claudeSessionsUpdate: { sessions: SessionMeta[] };
 		};
 	};
 }
@@ -272,153 +273,207 @@ async function getAppIconBase64(appPath: string): Promise<string | null> {
 	}
 }
 
-export const rpc = defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
-	handlers: {
-		requests: {
-			listApps: async () => {
-				return scanApps();
-			},
-			openApp: async ({ path }) => {
-				try {
-					Bun.spawn(["open", "-a", path]);
-					return true;
-				} catch {
+// Electrobun's `rpc` object maintains ONE transport. When a BrowserWindow is
+// created with `rpc`, its BrowserView calls `rpc.setTransport(...)` — so if
+// two windows share the same rpc instance, the second window to be created
+// silently replaces the transport, and every `rpc.send.*` call after that
+// point goes to that second window. In practice this meant that once the
+// chat window was opened, pushes intended for the palette (openPreferences,
+// claudeSessionsUpdate) were routed to the chat view instead — and after the
+// chat closed, the transport pointed at a dead webview and messages were
+// dropped entirely. We work around this by creating one rpc instance per
+// window and targeting them explicitly. Both share the same request
+// handlers; they differ only in the transport Electrobun wires up.
+function buildRpc() {
+	return defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
+		handlers: {
+			requests: {
+				listApps: async () => {
+					return scanApps();
+				},
+				openApp: async ({ path }) => {
+					try {
+						Bun.spawn(["open", "-a", path]);
+						return true;
+					} catch {
+						return false;
+					}
+				},
+				openUrl: async ({ url }) => {
+					try {
+						Bun.spawn(["open", url]);
+						return true;
+					} catch {
+						return false;
+					}
+				},
+				getAppIcon: async ({ path }) => {
+					const icon = await getAppIconBase64(path);
+					return { icon };
+				},
+				resizeWindow: async ({ height }) => {
+					if (mainWindowRef) {
+						const frame = mainWindowRef.getFrame();
+						if (frame.height === height) return true;
+						const newY = frame.y + (frame.height - height) / 2;
+						mainWindowRef.setFrame(frame.x, newY, 630, height);
+						return true;
+					}
 					return false;
-				}
-			},
-			openUrl: async ({ url }) => {
-				try {
-					Bun.spawn(["open", url]);
-					return true;
-				} catch {
-					return false;
-				}
-			},
-			getAppIcon: async ({ path }) => {
-				const icon = await getAppIconBase64(path);
-				return { icon };
-			},
-			resizeWindow: async ({ height }) => {
-				if (mainWindowRef) {
-					const frame = mainWindowRef.getFrame();
-					if (frame.height === height) return true;
-					const newY = frame.y + (frame.height - height) / 2;
-					mainWindowRef.setFrame(frame.x, newY, 630, height);
-					return true;
-				}
-				return false;
-			},
-			loadSettings: async () => {
-				return loadSettingsFromDisk();
-			},
-			saveSettings: async (next) => {
-				return saveSettingsToDisk(next);
-			},
-			githubGetTokenStatus: async () => {
-				return getGithubTokenStatus();
-			},
-			githubSetToken: async ({ token }) => {
-				const result = await setGithubToken(token);
-				if (result.ok) {
+				},
+				loadSettings: async () => {
+					return loadSettingsFromDisk();
+				},
+				saveSettings: async (next) => {
+					return saveSettingsToDisk(next);
+				},
+				githubGetTokenStatus: async () => {
+					return getGithubTokenStatus();
+				},
+				githubSetToken: async ({ token }) => {
+					const result = await setGithubToken(token);
+					if (result.ok) {
+						const current = await loadSettingsFromDisk();
+						await saveSettingsToDisk({
+							...current,
+							github: { ...current.github, hasToken: true },
+						});
+					}
+					return result;
+				},
+				githubDeleteToken: async () => {
+					await deleteGithubToken();
 					const current = await loadSettingsFromDisk();
 					await saveSettingsToDisk({
 						...current,
-						github: { ...current.github, hasToken: true },
+						github: { ...current.github, hasToken: false },
 					});
-				}
-				return result;
-			},
-			githubDeleteToken: async () => {
-				await deleteGithubToken();
-				const current = await loadSettingsFromDisk();
-				await saveSettingsToDisk({
-					...current,
-					github: { ...current.github, hasToken: false },
-				});
-				return true;
-			},
-			githubFetchSearch: async ({ subType, query }) => {
-				const started = Date.now();
-				const label =
-					subType.kind === "native"
-						? subType.type
-						: `custom:${subType.filter.kind}:${subType.filter.name}`;
-				try {
-					const result = await githubFetchSearch({ subType, query });
-					console.log(
-						`[github] ${label} "${query}" → ${result.items.length} items ${
-							result.cached ? "(cache)" : `(${Date.now() - started}ms)`
-						}`,
-					);
-					return result;
-				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					console.error(
-						`[github] ${label} "${query}" failed after ${Date.now() - started}ms: ${message}`,
-					);
-					if (err instanceof Error && err.stack) {
-						console.error(err.stack);
+					return true;
+				},
+				githubFetchSearch: async ({ subType, query }) => {
+					const started = Date.now();
+					const label =
+						subType.kind === "native"
+							? subType.type
+							: `custom:${subType.filter.kind}:${subType.filter.name}`;
+					try {
+						const result = await githubFetchSearch({ subType, query });
+						console.log(
+							`[github] ${label} "${query}" → ${result.items.length} items ${
+								result.cached ? "(cache)" : `(${Date.now() - started}ms)`
+							}`,
+						);
+						return result;
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						console.error(
+							`[github] ${label} "${query}" failed after ${Date.now() - started}ms: ${message}`,
+						);
+						if (err instanceof Error && err.stack) {
+							console.error(err.stack);
+						}
+						throw err;
 					}
-					throw err;
-				}
-			},
-			githubInvalidateCache: async () => {
-				invalidateSearchCache();
-				return true;
-			},
-			trackAnalyticsEvent: async ({ event, properties }) => {
-				trackEvent(event, properties);
-				return true;
-			},
-			setAnalyticsConsent: async ({ consentGiven }) => {
-				setAnalyticsEnabled(consentGiven);
-				return true;
-			},
-			claudeListSessions: async () => claudeListSessions(),
-			claudeCreateSession: async ({ prompt, cwd }) => {
-				const sessionId = await claudeCreateSession(prompt, cwd);
-				// Auto-open the chat window from the backend. Doing this
-				// in the renderer (via a follow-up claudeOpenChat RPC) is
-				// fragile because the mainview webview can be suspended
-				// after the previous chat window closes, swallowing the call.
-				console.log(
-					`[claude:rpc] claudeCreateSession: auto-opening chat for sessionId=${sessionId}`,
-				);
-				openChatCallback?.(sessionId);
-				return { sessionId };
-			},
-			claudeResumeSession: async ({ sessionId }) =>
-				claudeResumeSession(sessionId),
-			claudeSendMessage: async ({ message }) => {
-				await claudeSendMessage(message);
-			},
-			claudeStopGeneration: async () => claudeStopGeneration(),
-			claudeDeleteSession: async ({ sessionId }) =>
-				claudeDeleteSession(sessionId),
-			claudeGetSessionMessages: async ({ sessionId }) =>
-				claudeGetSessionMessages(sessionId),
-			claudeGetAuthStatus: async () => getClaudeAuthStatus(),
-			claudeLoginSSO: async () => loginAnthropicSSO(),
-			claudeLogoutSSO: async () => logoutAnthropicSSO(),
-			claudeSetBedrock: async (config) => setBedrockConfig(config),
-			claudeGetBedrock: async () => getBedrockConfig(),
-			claudeOpenChat: async ({ sessionId }) => {
-				console.log(
-					`[claude:rpc] claudeOpenChat: sessionId=${sessionId} hasCallback=${openChatCallback !== null}`,
-				);
-				openChatCallback?.(sessionId);
-				return true;
+				},
+				githubInvalidateCache: async () => {
+					invalidateSearchCache();
+					return true;
+				},
+				trackAnalyticsEvent: async ({ event, properties }) => {
+					trackEvent(event, properties);
+					return true;
+				},
+				setAnalyticsConsent: async ({ consentGiven }) => {
+					setAnalyticsEnabled(consentGiven);
+					return true;
+				},
+				claudeListSessions: async () => claudeListSessions(),
+				claudeCreateSession: async ({ prompt, cwd }) => {
+					const sessionId = await claudeCreateSession(prompt, cwd);
+					console.log(
+						`[claude:rpc] claudeCreateSession: auto-opening chat for sessionId=${sessionId}`,
+					);
+					openChatCallback?.(sessionId);
+					try {
+						const sessions = await claudeListSessions();
+						mainRpc.send.claudeSessionsUpdate({ sessions });
+					} catch (err) {
+						console.error("[claude:rpc] claudeCreateSession push failed:", err);
+					}
+					return { sessionId };
+				},
+				claudeResumeSession: async ({ sessionId }) =>
+					claudeResumeSession(sessionId),
+				claudeSendMessage: async ({ message }) => {
+					await claudeSendMessage(message);
+				},
+				claudeStopGeneration: async () => claudeStopGeneration(),
+				claudeDeleteSession: async ({ sessionId }) => {
+					const ok = await claudeDeleteSession(sessionId);
+					try {
+						const sessions = await claudeListSessions();
+						mainRpc.send.claudeSessionsUpdate({ sessions });
+					} catch (err) {
+						console.error("[claude:rpc] claudeDeleteSession push failed:", err);
+					}
+					return ok;
+				},
+				claudeGetSessionMessages: async ({ sessionId }) =>
+					claudeGetSessionMessages(sessionId),
+				claudeGetAuthStatus: async () => getClaudeAuthStatus(),
+				claudeLoginSSO: async () => loginAnthropicSSO(),
+				claudeLogoutSSO: async () => logoutAnthropicSSO(),
+				claudeSetBedrock: async (config) => setBedrockConfig(config),
+				claudeGetBedrock: async () => getBedrockConfig(),
+				claudeOpenChat: async ({ sessionId }) => {
+					console.log(
+						`[claude:rpc] claudeOpenChat: sessionId=${sessionId} hasCallback=${openChatCallback !== null}`,
+					);
+					openChatCallback?.(sessionId);
+					return true;
+				},
 			},
 		},
-	},
-});
+	});
+}
 
-// Wire the streaming sender so session-manager can push stream events to the renderer
+export const mainRpc = buildRpc();
+export const chatRpc = buildRpc();
+
+// Wire the streaming sender so session-manager can push stream events to the
+// chat window specifically. Using chatRpc avoids the transport-swap problem
+// that plagues a shared rpc instance.
+//
+// INVARIANT: openChatCallback must create the chat BrowserWindow
+// SYNCHRONOUSLY before yielding, so that chatRpc's transport is wired before
+// the streaming loop emits its first chunk. BrowserWindow's constructor does
+// this today — it calls createStreams() → setTransport() synchronously
+// during `new BrowserWindow(...)`. If that ever changes (e.g. someone
+// introduces an `await` before the constructor, or lazy-creates the window),
+// early `chatRpc.send.*` calls will throw `missingTransportMethodError` from
+// shared/rpc.ts and the streaming loop will die silently. The guard below
+// swallows that specific failure so a missed chunk doesn't kill the stream.
+function safeSend(label: string, fn: () => void): void {
+	try {
+		fn();
+	} catch (err) {
+		console.error(
+			`[chat:rpc] ${label} send failed (transport not ready?):`,
+			err,
+		);
+	}
+}
 claudeSetSender({
 	sendChunk: (sessionId, chunk) =>
-		rpc.send.claudeStreamChunk({ sessionId, chunk }),
+		safeSend("claudeStreamChunk", () =>
+			chatRpc.send.claudeStreamChunk({ sessionId, chunk }),
+		),
 	sendEnd: (sessionId, result) =>
-		rpc.send.claudeStreamEnd({ sessionId, result }),
+		safeSend("claudeStreamEnd", () =>
+			chatRpc.send.claudeStreamEnd({ sessionId, result }),
+		),
 	sendError: (sessionId, error) =>
-		rpc.send.claudeStreamError({ sessionId, error }),
+		safeSend("claudeStreamError", () =>
+			chatRpc.send.claudeStreamError({ sessionId, error }),
+		),
 });
