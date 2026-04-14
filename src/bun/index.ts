@@ -3,8 +3,13 @@ import { join } from "node:path";
 import { ApplicationMenu, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics";
 import { listSessions as claudeListSessions } from "./claude/session-manager";
+import { initProxy } from "./net/proxy";
 import { chatRpc, mainRpc, setMainWindow, setOpenChatCallback } from "./rpc";
 import { loadSettings } from "./settings";
+
+// Resolve proxy do sistema antes de qualquer fetch — propaga HTTPS_PROXY para
+// subprocessos (Claude CLI) e SDKs de terceiros (PostHog).
+await initProxy();
 
 // Load native helper for window overlay on fullscreen
 // import.meta.dir points to Resources/app/bun/ in the bundle

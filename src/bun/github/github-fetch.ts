@@ -1,4 +1,5 @@
 import { getToken } from "../github-token";
+import { fetchWithProxy } from "../net/proxy";
 import type { CustomFilter, GitHubSearchType } from "../settings";
 import { getCached, setCached } from "./search-cache";
 import {
@@ -70,7 +71,7 @@ async function apiRequest(
 		"User-Agent": "Ptolomeu",
 	};
 	if (token) headers.Authorization = `Bearer ${token}`;
-	const res = await fetch(url, { headers });
+	const res = await fetchWithProxy(url, { headers });
 	if (res.status === 403) {
 		const reset = res.headers.get("x-ratelimit-reset");
 		throw new Error(
