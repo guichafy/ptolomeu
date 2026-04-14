@@ -1,3 +1,5 @@
+import { fetchWithProxy } from "./net/proxy";
+
 const SERVICE = "com.ptolomeu.app.github.pat";
 const ACCOUNT = process.env.USER ?? "ptolomeu";
 
@@ -37,7 +39,7 @@ export interface SetTokenResult {
 
 async function validateTokenViaApi(token: string): Promise<SetTokenResult> {
 	try {
-		const res = await fetch("https://api.github.com/user", {
+		const res = await fetchWithProxy("https://api.github.com/user", {
 			headers: {
 				Authorization: `Bearer ${token}`,
 				Accept: "application/vnd.github+json",

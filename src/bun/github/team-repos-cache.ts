@@ -1,3 +1,5 @@
+import { fetchWithProxy } from "../net/proxy";
+
 export interface TeamRepo {
 	id: number;
 	name: string;
@@ -44,7 +46,7 @@ export async function fetchAllTeamRepos(
 	)}/teams/${encodeURIComponent(team)}/repos?per_page=100`;
 	const all: TeamRepo[] = [];
 	while (url) {
-		const res = await fetch(url, { headers });
+		const res = await fetchWithProxy(url, { headers });
 		if (!res.ok) {
 			throw new Error(`GitHub ${res.status}: ${res.statusText}`);
 		}
