@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/guichafy/ptolomeu/compare/v1.3.0...v1.3.1) (2026-04-15)
+
+
+### Bug Fixes
+
+* **net:** honor system proxy configuration for outbound fetch ([318724e](https://github.com/guichafy/ptolomeu/commit/318724ed7aea337f64868918cbc35ce396fd6f90))
+
 # [1.3.0](https://github.com/guichafy/ptolomeu/compare/v1.2.0...v1.3.0) (2026-04-14)
 
 
