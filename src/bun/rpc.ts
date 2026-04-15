@@ -36,13 +36,20 @@ import {
 	setToken as setGithubToken,
 	type TokenStatus,
 } from "./github-token";
+import { deletePassword, setPassword } from "./keychain";
 import {
+	fetchWithProxy,
 	getProxyStatus as getProxyStatusFromModule,
+	initProxy,
+	manualAccountId,
+	PROXY_KEYCHAIN_SERVICE,
 	type ProxyStatus,
 	reloadFromSystem as reloadProxyFromSystemModule,
 } from "./net/proxy";
 import {
 	loadSettings as loadSettingsFromDisk,
+	type ManualProxyProtocol,
+	type ManualProxySettings,
 	type Settings,
 	saveSettings as saveSettingsToDisk,
 } from "./settings";
@@ -121,6 +128,27 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			getProxyStatus: { params: void; response: ProxyStatus };
 			reloadProxyFromSystem: { params: void; response: ProxyStatus };
+			saveManualProxy: {
+				params: {
+					protocol: ManualProxyProtocol;
+					host: string;
+					port: number;
+					username?: string;
+					password?: string;
+					noProxy: string[];
+				};
+				response: { ok: boolean; error?: string };
+			};
+			clearManualProxy: { params: void; response: boolean };
+			testProxyConnection: {
+				params: { testUrl?: string };
+				response: {
+					ok: boolean;
+					status?: number;
+					latencyMs: number;
+					error?: string;
+				};
+			};
 		};
 		messages: {};
 	};
@@ -343,6 +371,104 @@ function buildRpc() {
 				},
 				reloadProxyFromSystem: async () => {
 					return reloadProxyFromSystemModule();
+				},
+				saveManualProxy: async (args) => {
+					const host = args.host.trim();
+					if (!host || /\s|\//.test(host)) {
+						return { ok: false, error: "Host inválido" };
+					}
+					if (
+						!Number.isInteger(args.port) ||
+						args.port < 1 ||
+						args.port > 65535
+					) {
+						return { ok: false, error: "Porta deve estar entre 1 e 65535" };
+					}
+					if (args.protocol !== "http" && args.protocol !== "https") {
+						return { ok: false, error: "Protocolo inválido" };
+					}
+					const username = args.username?.trim() || undefined;
+					const ref = {
+						service: PROXY_KEYCHAIN_SERVICE,
+						account: manualAccountId({
+							protocol: args.protocol,
+							host,
+							port: args.port,
+						} as ManualProxySettings),
+					};
+					// Se senha foi fornecida, grava. Omitir mantém senha anterior.
+					let hasPassword: boolean;
+					if (args.password !== undefined) {
+						if (args.password.length === 0) {
+							// Senha explicitamente vazia → apagar entrada anterior.
+							await deletePassword(ref);
+							hasPassword = false;
+						} else {
+							const r = await setPassword(ref, args.password);
+							if (!r.ok) {
+								return { ok: false, error: r.error ?? "Falha no Keychain" };
+							}
+							hasPassword = true;
+						}
+					} else {
+						const current = await loadSettingsFromDisk();
+						hasPassword = current.proxy.manual?.hasPassword ?? false;
+					}
+					const manual: ManualProxySettings = {
+						protocol: args.protocol,
+						host,
+						port: args.port,
+						username,
+						hasPassword,
+						noProxy: args.noProxy.filter((x) => typeof x === "string"),
+					};
+					const current = await loadSettingsFromDisk();
+					const saved = await saveSettingsToDisk({
+						...current,
+						proxy: { mode: "manual", manual },
+					});
+					if (!saved) {
+						return { ok: false, error: "Falha ao gravar configurações" };
+					}
+					await initProxy("manual", manual);
+					return { ok: true };
+				},
+				clearManualProxy: async () => {
+					const current = await loadSettingsFromDisk();
+					const m = current.proxy.manual;
+					if (m) {
+						await deletePassword({
+							service: PROXY_KEYCHAIN_SERVICE,
+							account: manualAccountId(m),
+						});
+					}
+					await saveSettingsToDisk({
+						...current,
+						proxy: { mode: "auto" },
+					});
+					await initProxy("auto");
+					return true;
+				},
+				testProxyConnection: async ({ testUrl }) => {
+					const url = testUrl ?? "https://api.github.com";
+					const started = Date.now();
+					try {
+						const res = await fetchWithProxy(url, {
+							signal: AbortSignal.timeout(10_000),
+							headers: { "User-Agent": "Ptolomeu-ProxyTest" },
+						});
+						return {
+							ok: res.ok,
+							status: res.status,
+							latencyMs: Date.now() - started,
+						};
+					} catch (err) {
+						return {
+							ok: false,
+							error: err instanceof Error ? err.message : String(err),
+							latencyMs: Date.now() - started,
+						};
+					}
 				},
 				githubGetTokenStatus: async () => {
 					return getGithubTokenStatus();

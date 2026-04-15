@@ -42,19 +42,40 @@ export interface ClaudeSettings {
 	permissionMode: ClaudePermissionMode;
 }
 
-export type ProxyMode = "auto" | "system" | "env" | "none";
+export type ProxyMode = "auto" | "system" | "env" | "none" | "manual";
+
+export type ManualProxyProtocol = "http" | "https";
+
+export interface ManualProxySettings {
+	protocol: ManualProxyProtocol;
+	host: string;
+	port: number;
+	username?: string;
+	hasPassword: boolean;
+	noProxy: string[];
+}
 
 export interface ProxySettings {
 	mode: ProxyMode;
+	manual?: ManualProxySettings;
 }
+
+export type ProxySource =
+	| "env"
+	| "scutil"
+	| "scutil+pac"
+	| "pac"
+	| "manual"
+	| "none";
 
 export interface ProxyStatus {
 	mode: ProxyMode;
-	source: "env" | "scutil" | "none";
+	source: ProxySource;
 	httpsProxy: string | null;
 	httpProxy: string | null;
 	noProxyCount: number;
 	resolvedAt: number;
+	pacUrl?: string;
 }
 
 export interface Settings {
@@ -243,6 +264,27 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			getProxyStatus: { params: void; response: ProxyStatus };
 			reloadProxyFromSystem: { params: void; response: ProxyStatus };
+			saveManualProxy: {
+				params: {
+					protocol: ManualProxyProtocol;
+					host: string;
+					port: number;
+					username?: string;
+					password?: string;
+					noProxy: string[];
+				};
+				response: { ok: boolean; error?: string };
+			};
+			clearManualProxy: { params: void; response: boolean };
+			testProxyConnection: {
+				params: { testUrl?: string };
+				response: {
+					ok: boolean;
+					status?: number;
+					latencyMs: number;
+					error?: string;
+				};
+			};
 		};
 		messages: {};
 	};

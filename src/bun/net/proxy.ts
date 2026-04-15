@@ -14,26 +14,47 @@
  * resolvido via `scutil`, e expõe um wrapper `fetchWithProxy`.
  */
 
-import type { ProxyMode } from "../settings";
+import { getPassword } from "../keychain";
+import type { ManualProxySettings, ProxyMode } from "../settings";
+
+export const PROXY_KEYCHAIN_SERVICE = "com.ptolomeu.app.proxy";
+
+export function manualAccountId(m: ManualProxySettings): string {
+	return `${m.protocol}://${m.host}:${m.port}`;
+}
 
 export type { ProxyMode };
+
+export type ProxySource =
+	| "env"
+	| "scutil"
+	| "scutil+pac"
+	| "pac"
+	| "manual"
+	| "none";
 
 export interface ProxyConfig {
 	httpProxy: string | null;
 	httpsProxy: string | null;
 	noProxy: string[];
-	source: "env" | "scutil" | "none";
+	source: ProxySource;
 	mode: ProxyMode;
 	resolvedAt: number;
+	/** URL do PAC file quando detectado via scutil. */
+	pacUrl?: string;
+	/** Identificador do Keychain (sem senha) quando mode=manual. */
+	manualAccount?: string;
 }
 
 export interface ProxyStatus {
 	mode: ProxyMode;
-	source: "env" | "scutil" | "none";
+	source: ProxySource;
 	httpsProxy: string | null;
 	httpProxy: string | null;
 	noProxyCount: number;
 	resolvedAt: number;
+	pacUrl?: string;
+	pacLoaded?: boolean;
 }
 
 const PROXY_ENV_KEYS = [
@@ -102,14 +123,19 @@ function readFromEnv(): Omit<ProxyConfig, "mode" | "resolvedAt"> | null {
  *     HTTPSEnable : 1
  *     HTTPSProxy : proxy.corp.example
  *     HTTPSPort : 8080
+ *     ProxyAutoConfigEnable : 1
+ *     ProxyAutoConfigURLString : http://wpad.corp/proxy.pac
  *   }
  *
  * Campos ausentes são tratados como desligados. Retorna `null` quando nenhum
- * proxy HTTP(S) está habilitado.
+ * proxy HTTP(S) estático nem PAC está habilitado.
  */
 export function parseScutilProxy(
 	output: string,
-): Omit<ProxyConfig, "mode" | "resolvedAt"> | null {
+): Pick<
+	ProxyConfig,
+	"httpProxy" | "httpsProxy" | "noProxy" | "source" | "pacUrl"
+> | null {
 	const scalars: Record<string, string> = {};
 	const exceptions: string[] = [];
 	let inExceptions = false;
@@ -149,6 +175,11 @@ export function parseScutilProxy(
 
 	const httpsEnabled = scalars.HTTPSEnable === "1";
 	const httpEnabled = scalars.HTTPEnable === "1";
+	const pacEnabled = scalars.ProxyAutoConfigEnable === "1";
+	const pacUrl =
+		pacEnabled && scalars.ProxyAutoConfigURLString
+			? scalars.ProxyAutoConfigURLString
+			: undefined;
 
 	const httpsHost = httpsEnabled ? scalars.HTTPSProxy : undefined;
 	const httpsPort = httpsEnabled ? scalars.HTTPSPort : undefined;
@@ -162,13 +193,21 @@ export function parseScutilProxy(
 		? `http://${httpHost}${httpPort ? `:${httpPort}` : ""}`
 		: null;
 
-	if (!httpsProxy && !httpProxy) return null;
+	if (!httpsProxy && !httpProxy && !pacUrl) return null;
+
+	const hasStatic = !!(httpsProxy || httpProxy);
+	const source: ProxySource = pacUrl
+		? hasStatic
+			? "scutil+pac"
+			: "pac"
+		: "scutil";
 
 	return {
 		httpsProxy,
 		httpProxy,
 		noProxy: exceptions.map((e) => e.toLowerCase()),
-		source: "scutil",
+		source,
+		pacUrl,
 	};
 }
 
@@ -272,10 +311,56 @@ function emptyConfig(mode: ProxyMode): ProxyConfig {
 	};
 }
 
-async function resolveForMode(mode: ProxyMode): Promise<ProxyConfig> {
+async function resolveManual(
+	manual: ManualProxySettings | undefined,
+): Promise<ProxyConfig> {
+	if (!manual) return emptyConfig("manual");
+	const account = manualAccountId(manual);
+	let auth = "";
+	if (manual.username) {
+		const encUser = encodeURIComponent(manual.username);
+		if (manual.hasPassword) {
+			const pw = await getPassword({
+				service: PROXY_KEYCHAIN_SERVICE,
+				account,
+			});
+			if (pw) {
+				auth = `${encUser}:${encodeURIComponent(pw)}@`;
+			} else {
+				// Senha marcada como existente mas Keychain retornou vazio. Seguir
+				// sem credencial — o fetch vai falhar com 407 e o usuário vê o erro
+				// na UI via testProxyConnection.
+				auth = `${encUser}@`;
+			}
+		} else {
+			auth = `${encUser}@`;
+		}
+	}
+	const url = `${manual.protocol}://${auth}${manual.host}:${manual.port}`;
+	const cfg: ProxyConfig = {
+		httpsProxy: url,
+		httpProxy: url,
+		noProxy: manual.noProxy.map((s) => s.toLowerCase()),
+		source: "manual",
+		mode: "manual",
+		resolvedAt: Date.now(),
+		manualAccount: account,
+	};
+	propagateToEnv(cfg, { overwrite: true });
+	return cfg;
+}
+
+async function resolveForMode(
+	mode: ProxyMode,
+	manual?: ManualProxySettings,
+): Promise<ProxyConfig> {
 	if (mode === "none") {
 		clearProxyEnv();
 		return emptyConfig("none");
+	}
+
+	if (mode === "manual") {
+		return resolveManual(manual);
 	}
 
 	if (mode === "env") {
@@ -314,21 +399,55 @@ async function resolveForMode(mode: ProxyMode): Promise<ProxyConfig> {
 	return emptyConfig("auto");
 }
 
+/**
+ * Remove credenciais de uma URL de proxy, substituindo password por `***`.
+ * Usado em logs e no status exposto ao renderer — a senha nunca deve sair
+ * do processo bun.
+ */
+export function redactProxyUrl(url: string | null): string | null {
+	if (!url) return url;
+	// Fast path: sem credenciais embutidas, não normaliza (WHATWG URL adiciona
+	// trailing slash e reordena componentes — evita ruído para testes e logs).
+	if (!url.includes("@")) return url;
+	try {
+		const u = new URL(url);
+		if (u.password) u.password = "***";
+		return u.toString();
+	} catch {
+		return url;
+	}
+}
+
 function logResolved(cfg: ProxyConfig): void {
 	console.log(
-		`[proxy] mode=${cfg.mode} source=${cfg.source} https=${cfg.httpsProxy ?? "-"} http=${cfg.httpProxy ?? "-"} no_proxy=${cfg.noProxy.length}`,
+		`[proxy] mode=${cfg.mode} source=${cfg.source}` +
+			` https=${redactProxyUrl(cfg.httpsProxy) ?? "-"}` +
+			` http=${redactProxyUrl(cfg.httpProxy) ?? "-"}` +
+			` no_proxy=${cfg.noProxy.length}` +
+			(cfg.pacUrl ? ` pac=${cfg.pacUrl}` : ""),
 	);
 }
+
+/**
+ * Último `manual` efetivo — guardado para permitir `reloadFromSystem` /
+ * re-resolver sem que o chamador precise buscar settings novamente.
+ */
+let lastManual: ManualProxySettings | undefined;
 
 /**
  * Descobre e armazena a configuração de proxy. Chamar uma vez no startup
  * antes de qualquer fetch. Pode ser chamada novamente para trocar de modo,
  * mas subprocessos já vivos não enxergam a mudança. Nunca lança.
+ *
+ * `manualConfig` é obrigatório para `mode === "manual"`; nos demais modos é
+ * ignorado mas preservado em cache para transições futuras.
  */
 export async function initProxy(
 	mode: ProxyMode = "auto",
+	manualConfig?: ManualProxySettings,
 ): Promise<ProxyConfig> {
-	const cfg = await resolveForMode(mode);
+	if (manualConfig !== undefined) lastManual = manualConfig;
+	const cfg = await resolveForMode(mode, manualConfig ?? lastManual);
 	cached = cfg;
 	logResolved(cfg);
 	return cfg;
@@ -346,7 +465,7 @@ export async function reloadFromSystem(): Promise<ProxyStatus> {
 	if (cached.mode !== "system" && cached.mode !== "auto") {
 		return getProxyStatus();
 	}
-	const cfg = await resolveForMode(cached.mode);
+	const cfg = await resolveForMode(cached.mode, lastManual);
 	cached = cfg;
 	logResolved(cfg);
 	return getProxyStatus();
@@ -386,7 +505,8 @@ export function getProxyConfig(): ProxyConfig | null {
 }
 
 /**
- * Snapshot serializável para o renderer/UI.
+ * Snapshot serializável para o renderer/UI. Credenciais de senha são
+ * sempre redigidas (`user:***@host`) antes de serem expostas.
  */
 export function getProxyStatus(): ProxyStatus {
 	if (!cached) {
@@ -399,19 +519,22 @@ export function getProxyStatus(): ProxyStatus {
 			resolvedAt: 0,
 		};
 	}
-	return {
+	const status: ProxyStatus = {
 		mode: cached.mode,
 		source: cached.source,
-		httpsProxy: cached.httpsProxy,
-		httpProxy: cached.httpProxy,
+		httpsProxy: redactProxyUrl(cached.httpsProxy),
+		httpProxy: redactProxyUrl(cached.httpProxy),
 		noProxyCount: cached.noProxy.length,
 		resolvedAt: cached.resolvedAt,
 	};
+	if (cached.pacUrl) status.pacUrl = cached.pacUrl;
+	return status;
 }
 
 /** Reset interno para testes. */
 export function _resetProxyCache(): void {
 	cached = null;
+	lastManual = undefined;
 }
 
 export interface BunFetchInit extends RequestInit {

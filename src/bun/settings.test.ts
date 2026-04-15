@@ -109,3 +109,100 @@ describe("validateSettings", () => {
 		expect(result.ok).toBe(false);
 	});
 });
+
+describe("validateSettings → proxy", () => {
+	const base = {
+		version: 1 as const,
+		plugins: { enabledOrder: ["github"] },
+		github: { hasToken: false, customFilters: [] },
+	};
+
+	it("aceita mode=manual com config válida", () => {
+		const r = validateSettings({
+			...base,
+			proxy: {
+				mode: "manual",
+				manual: {
+					protocol: "http",
+					host: "proxy.corp",
+					port: 8080,
+					username: "alice",
+					hasPassword: true,
+					noProxy: ["*.local"],
+				},
+			},
+		});
+		expect(r.ok).toBe(true);
+		expect(r.value?.proxy.mode).toBe("manual");
+		expect(r.value?.proxy.manual?.host).toBe("proxy.corp");
+	});
+
+	it("degrada para mode=auto quando mode=manual sem config manual", () => {
+		const r = validateSettings({ ...base, proxy: { mode: "manual" } });
+		expect(r.ok).toBe(true);
+		expect(r.value?.proxy.mode).toBe("auto");
+		expect(r.value?.proxy.manual).toBeUndefined();
+	});
+
+	it("degrada para mode=auto quando manual é inválido", () => {
+		const r = validateSettings({
+			...base,
+			proxy: {
+				mode: "manual",
+				manual: {
+					protocol: "ftp",
+					host: "x",
+					port: 8080,
+					hasPassword: false,
+					noProxy: [],
+				},
+			},
+		});
+		expect(r.ok).toBe(true);
+		expect(r.value?.proxy.mode).toBe("auto");
+	});
+
+	it("rejeita porta fora de range mesmo em modos diferentes", () => {
+		const r = validateSettings({
+			...base,
+			proxy: {
+				mode: "auto",
+				manual: {
+					protocol: "http",
+					host: "x",
+					port: 70000,
+					hasPassword: false,
+					noProxy: [],
+				},
+			},
+		});
+		// mode=auto não exige manual válido — o campo manual inválido é apenas descartado.
+		expect(r.ok).toBe(true);
+		expect(r.value?.proxy.mode).toBe("auto");
+		expect(r.value?.proxy.manual).toBeUndefined();
+	});
+
+	it("rejeita host com espaço", () => {
+		const r = validateSettings({
+			...base,
+			proxy: {
+				mode: "manual",
+				manual: {
+					protocol: "http",
+					host: "proxy corp",
+					port: 8080,
+					hasPassword: false,
+					noProxy: [],
+				},
+			},
+		});
+		expect(r.ok).toBe(true);
+		expect(r.value?.proxy.mode).toBe("auto");
+	});
+
+	it("settings.json legado sem campo proxy continua válido", () => {
+		const r = validateSettings(base);
+		expect(r.ok).toBe(true);
+		expect(r.value?.proxy.mode).toBe("auto");
+	});
+});
