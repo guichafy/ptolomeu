@@ -208,10 +208,13 @@ function PaletteContent() {
 	// Claude provider shows recent sessions even with empty query
 	const hasIdleResults =
 		activeProvider.id === "claude" && results.length > 0 && !query.trim();
+	const resultsMatchQuery = resultsQueryRef.current === query;
 	const hasContent =
 		hasIdleResults ||
 		(query.trim().length > 0 &&
-			(results.length > 0 || isLoading || error !== null));
+			((resultsMatchQuery && results.length > 0) ||
+				isLoading ||
+				error !== null));
 
 	// Resize native window when content appears/disappears, settings dialog toggles, or combobox opens
 	useEffect(() => {
@@ -318,7 +321,7 @@ function PaletteContent() {
 				</div>
 			) : hasContent ? (
 				<div className="flex-1 flex flex-col overflow-hidden animate-in fade-in-0 slide-in-from-top-2 duration-200">
-					{results.length > 0 ? (
+					{results.length > 0 && resultsMatchQuery ? (
 						<ScrollArea className="flex-1">
 							<div className="p-2">
 								{results.map((result, i) => (
