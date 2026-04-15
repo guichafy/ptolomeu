@@ -1,4 +1,4 @@
-import { Settings2, SlidersHorizontal } from "lucide-react";
+import { Network, Settings2, SlidersHorizontal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,6 +10,7 @@ import {
 } from "../providers/registry";
 import type { SettingsSection } from "../providers/rpc";
 import { GeneralSection } from "./general-section";
+import { NetworkSection } from "./network-section";
 import { PluginsSection } from "./plugins-section";
 import { useSettings } from "./settings-context";
 
@@ -23,6 +24,7 @@ interface PluginSubItem {
 
 const NAV_ITEMS: { id: Section; label: string; icon: typeof Settings2 }[] = [
 	{ id: "plugins", label: "Plugins", icon: SlidersHorizontal },
+	{ id: "network", label: "Rede", icon: Network },
 	{ id: "general", label: "Geral", icon: Settings2 },
 ];
 
@@ -148,6 +150,8 @@ export function SettingsDialog() {
 								/>
 							) : resolvedSection === "general" ? (
 								<GeneralSection />
+							) : resolvedSection === "network" ? (
+								<NetworkSection />
 							) : resolvedSection.startsWith("plugin:") ? (
 								<PluginConfigSection
 									pluginId={resolvedSection.replace("plugin:", "")}

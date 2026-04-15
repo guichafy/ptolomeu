@@ -7,9 +7,11 @@ import { initProxy } from "./net/proxy";
 import { chatRpc, mainRpc, setMainWindow, setOpenChatCallback } from "./rpc";
 import { loadSettings } from "./settings";
 
-// Resolve proxy do sistema antes de qualquer fetch — propaga HTTPS_PROXY para
-// subprocessos (Claude CLI) e SDKs de terceiros (PostHog).
-await initProxy();
+// Carrega settings antes de qualquer fetch para que o modo de proxy escolhido
+// pelo usuário (auto/system/env/none) seja respeitado desde o startup. Propaga
+// HTTPS_PROXY para subprocessos (Claude CLI) e SDKs de terceiros (PostHog).
+const bootSettings = await loadSettings();
+await initProxy(bootSettings.proxy?.mode ?? "auto");
 
 // Load native helper for window overlay on fullscreen
 // import.meta.dir points to Resources/app/bun/ in the bundle
@@ -205,8 +207,7 @@ mainWindow.on("focus", () => {
 });
 
 // Initialize analytics (respects user consent)
-const settings = await loadSettings();
-initAnalytics(settings.analytics);
+initAnalytics(bootSettings.analytics);
 trackEvent("app_launched", { version: "1.2.0" });
 
 // Create system tray with app icon

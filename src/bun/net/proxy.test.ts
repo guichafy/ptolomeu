@@ -4,8 +4,10 @@ import {
 	fetchWithProxy,
 	getProxyConfig,
 	getProxyFor,
+	getProxyStatus,
 	initProxy,
 	parseScutilProxy,
+	reloadFromSystem,
 	shouldBypassProxy,
 } from "./proxy";
 
@@ -47,8 +49,25 @@ function mockScutil(stdout: string, exitCode = 0) {
 			stderr: new Response("").body,
 			exited: Promise.resolve(match ? exitCode : 1),
 			exitCode: match ? exitCode : 1,
+			kill: () => {},
 		};
 	}) as typeof Bun.spawn;
+}
+
+function mockScutilHanging() {
+	const killed = { current: false };
+	(Bun as unknown as { spawn: unknown }).spawn = ((..._args: unknown[]) => ({
+		stdout: new Response("").body,
+		stderr: new Response("").body,
+		exited: new Promise<number>(() => {
+			/* nunca resolve */
+		}),
+		exitCode: null,
+		kill: () => {
+			killed.current = true;
+		},
+	})) as typeof Bun.spawn;
+	return killed;
 }
 
 beforeEach(() => {
@@ -306,5 +325,181 @@ describe("fetchWithProxy", () => {
 
 	it("ignora configurações iniciais com cached=none", async () => {
 		expect(getProxyConfig()).toBeNull();
+	});
+});
+
+describe("initProxy → mode=system", () => {
+	it("ignora env vars e força scutil", async () => {
+		process.env.HTTPS_PROXY = "http://env-only:1111";
+		mockScutil(`<dictionary> {
+  HTTPSEnable : 1
+  HTTPSProxy : sys.proxy
+  HTTPSPort : 9000
+}`);
+		const cfg = await initProxy("system");
+		expect(cfg.source).toBe("scutil");
+		expect(cfg.httpsProxy).toBe("http://sys.proxy:9000");
+	});
+
+	it("sobrescreve HTTPS_PROXY do ambiente com valor do scutil", async () => {
+		process.env.HTTPS_PROXY = "http://env-only:1111";
+		mockScutil(`<dictionary> {
+  HTTPSEnable : 1
+  HTTPSProxy : sys.proxy
+  HTTPSPort : 9000
+}`);
+		await initProxy("system");
+		expect(process.env.HTTPS_PROXY).toBe("http://sys.proxy:9000");
+	});
+
+	it("retorna source=none quando scutil não tem proxy", async () => {
+		mockScutil(`<dictionary> {
+  HTTPEnable : 0
+  HTTPSEnable : 0
+}`);
+		const cfg = await initProxy("system");
+		expect(cfg.source).toBe("none");
+		expect(cfg.mode).toBe("system");
+	});
+});
+
+describe("initProxy → mode=env", () => {
+	it("usa env vars sem cair em scutil", async () => {
+		process.env.HTTPS_PROXY = "http://env-only:1111";
+		mockScutil(`<dictionary> {
+  HTTPSEnable : 1
+  HTTPSProxy : sys.proxy
+  HTTPSPort : 9000
+}`);
+		const cfg = await initProxy("env");
+		expect(cfg.source).toBe("env");
+		expect(cfg.httpsProxy).toBe("http://env-only:1111");
+	});
+
+	it("retorna source=none quando env vars ausentes (não cai em scutil)", async () => {
+		mockScutil(`<dictionary> {
+  HTTPSEnable : 1
+  HTTPSProxy : sys.proxy
+  HTTPSPort : 9000
+}`);
+		const cfg = await initProxy("env");
+		expect(cfg.source).toBe("none");
+		expect(cfg.mode).toBe("env");
+		expect(cfg.httpsProxy).toBeNull();
+	});
+});
+
+describe("initProxy → mode=none", () => {
+	it("limpa env vars HTTPS_PROXY/HTTP_PROXY/ALL_PROXY/NO_PROXY", async () => {
+		process.env.HTTPS_PROXY = "http://x:1";
+		process.env.HTTP_PROXY = "http://x:2";
+		process.env.ALL_PROXY = "http://x:3";
+		process.env.NO_PROXY = "*.local";
+		process.env.https_proxy = "http://y:1";
+		const cfg = await initProxy("none");
+		expect(cfg.source).toBe("none");
+		expect(cfg.httpsProxy).toBeNull();
+		expect(process.env.HTTPS_PROXY).toBeUndefined();
+		expect(process.env.HTTP_PROXY).toBeUndefined();
+		expect(process.env.ALL_PROXY).toBeUndefined();
+		expect(process.env.NO_PROXY).toBeUndefined();
+		expect(process.env.https_proxy).toBeUndefined();
+	});
+
+	it("getProxyFor retorna null em mode=none", async () => {
+		process.env.HTTPS_PROXY = "http://x:1";
+		await initProxy("none");
+		expect(getProxyFor("https://api.github.com")).toBeNull();
+	});
+});
+
+describe("reloadFromSystem", () => {
+	it("re-resolve scutil em mode=system e atualiza cached", async () => {
+		mockScutil(`<dictionary> {
+  HTTPSEnable : 1
+  HTTPSProxy : first.proxy
+  HTTPSPort : 1
+}`);
+		await initProxy("system");
+		expect(getProxyStatus().httpsProxy).toBe("http://first.proxy:1");
+
+		mockScutil(`<dictionary> {
+  HTTPSEnable : 1
+  HTTPSProxy : second.proxy
+  HTTPSPort : 2
+}`);
+		const status = await reloadFromSystem();
+		expect(status.httpsProxy).toBe("http://second.proxy:2");
+		expect(status.mode).toBe("system");
+	});
+
+	it("é noop em mode=env (não roda scutil)", async () => {
+		process.env.HTTPS_PROXY = "http://env:1";
+		await initProxy("env");
+		mockScutil(`<dictionary> {
+  HTTPSEnable : 1
+  HTTPSProxy : should.not.be.read
+  HTTPSPort : 9
+}`);
+		const status = await reloadFromSystem();
+		expect(status.mode).toBe("env");
+		expect(status.httpsProxy).toBe("http://env:1");
+	});
+
+	it("é noop em mode=none", async () => {
+		await initProxy("none");
+		const status = await reloadFromSystem();
+		expect(status.mode).toBe("none");
+		expect(status.httpsProxy).toBeNull();
+	});
+
+	it("antes de initProxy retorna status default", async () => {
+		_resetProxyCache();
+		const status = await reloadFromSystem();
+		expect(status.source).toBe("none");
+		expect(status.resolvedAt).toBe(0);
+	});
+});
+
+describe("readFromScutil timeout", () => {
+	it("aborta após timeout quando scutil trava e retorna source=none", async () => {
+		vi.useFakeTimers();
+		try {
+			const killed = mockScutilHanging();
+			const promise = initProxy("system");
+			// Avança o relógio para disparar o timeout interno (SCUTIL_TIMEOUT_MS).
+			await vi.advanceTimersByTimeAsync(5000);
+			const cfg = await promise;
+			expect(cfg.source).toBe("none");
+			expect(cfg.mode).toBe("system");
+			expect(killed.current).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
+describe("getProxyStatus", () => {
+	it("retorna snapshot serializável", async () => {
+		process.env.HTTPS_PROXY = "http://p:8080";
+		process.env.HTTP_PROXY = "http://p2:8080";
+		process.env.NO_PROXY = "*.local,localhost";
+		await initProxy("env");
+		const status = getProxyStatus();
+		expect(status).toEqual({
+			mode: "env",
+			source: "env",
+			httpsProxy: "http://p:8080",
+			httpProxy: "http://p2:8080",
+			noProxyCount: 2,
+			resolvedAt: expect.any(Number),
+		});
+	});
+
+	it("retorna mode=auto e source=none antes do initProxy", () => {
+		_resetProxyCache();
+		const status = getProxyStatus();
+		expect(status.mode).toBe("auto");
+		expect(status.source).toBe("none");
 	});
 });

@@ -42,6 +42,21 @@ export interface ClaudeSettings {
 	permissionMode: ClaudePermissionMode;
 }
 
+export type ProxyMode = "auto" | "system" | "env" | "none";
+
+export interface ProxySettings {
+	mode: ProxyMode;
+}
+
+export interface ProxyStatus {
+	mode: ProxyMode;
+	source: "env" | "scutil" | "none";
+	httpsProxy: string | null;
+	httpProxy: string | null;
+	noProxyCount: number;
+	resolvedAt: number;
+}
+
 export interface Settings {
 	version: 1;
 	plugins: {
@@ -50,6 +65,7 @@ export interface Settings {
 	github: GitHubSettings;
 	analytics: AnalyticsSettings;
 	claude: ClaudeSettings;
+	proxy: ProxySettings;
 }
 
 export type GitHubSubType =
@@ -98,7 +114,11 @@ export interface TokenStatus {
 	login?: string;
 }
 
-export type SettingsSection = "plugins" | "general" | `plugin:${string}`;
+export type SettingsSection =
+	| "plugins"
+	| "general"
+	| "network"
+	| `plugin:${string}`;
 
 export interface ClaudeAuthStatus {
 	mode: "anthropic" | "bedrock" | "none";
@@ -221,6 +241,8 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				params: { sessionId?: string };
 				response: boolean;
 			};
+			getProxyStatus: { params: void; response: ProxyStatus };
+			reloadProxyFromSystem: { params: void; response: ProxyStatus };
 		};
 		messages: {};
 	};

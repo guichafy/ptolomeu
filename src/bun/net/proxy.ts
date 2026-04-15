@@ -1,24 +1,51 @@
 /**
  * Resolução de configuração de proxy para o processo Bun.
  *
- * Ordem de precedência:
- *   1. Variáveis de ambiente padrão Unix (HTTPS_PROXY, HTTP_PROXY, ALL_PROXY,
- *      NO_PROXY — também nas variantes em caixa baixa).
- *   2. Preferências do Sistema macOS via `scutil --proxy`.
+ * O modo é definido pelo usuário em Preferências (settings.proxy.mode):
+ *   - "auto"   → tenta env vars; cai para `scutil --proxy`; senão, sem proxy.
+ *   - "system" → ignora env e força a leitura via `scutil --proxy`.
+ *   - "env"    → usa apenas HTTPS_PROXY/HTTP_PROXY/ALL_PROXY/NO_PROXY.
+ *   - "none"   → desliga proxy e remove as env vars do processo, para que
+ *                subprocessos (Claude CLI) e SDKs (PostHog) também não usem.
  *
  * O Bun fetch aceita a opção `proxy` (extensão específica do runtime) mas não
  * respeita automaticamente as env vars padrão. Por isso este módulo existe:
- * descobre a configuração uma vez, propaga env vars para subprocessos (Claude
- * CLI, SDKs que leem HTTPS_PROXY) e expõe um wrapper `fetchWithProxy` para as
- * chamadas diretas.
+ * descobre a configuração uma vez, propaga env vars para subprocessos quando
+ * resolvido via `scutil`, e expõe um wrapper `fetchWithProxy`.
  */
+
+import type { ProxyMode } from "../settings";
+
+export type { ProxyMode };
 
 export interface ProxyConfig {
 	httpProxy: string | null;
 	httpsProxy: string | null;
 	noProxy: string[];
 	source: "env" | "scutil" | "none";
+	mode: ProxyMode;
+	resolvedAt: number;
 }
+
+export interface ProxyStatus {
+	mode: ProxyMode;
+	source: "env" | "scutil" | "none";
+	httpsProxy: string | null;
+	httpProxy: string | null;
+	noProxyCount: number;
+	resolvedAt: number;
+}
+
+const PROXY_ENV_KEYS = [
+	"HTTPS_PROXY",
+	"HTTP_PROXY",
+	"ALL_PROXY",
+	"NO_PROXY",
+	"https_proxy",
+	"http_proxy",
+	"all_proxy",
+	"no_proxy",
+] as const;
 
 let cached: ProxyConfig | null = null;
 
@@ -43,7 +70,7 @@ function parseNoProxy(raw: string | undefined | null): string[] {
 		.filter((s) => s.length > 0);
 }
 
-function readFromEnv(): ProxyConfig | null {
+function readFromEnv(): Omit<ProxyConfig, "mode" | "resolvedAt"> | null {
 	const httpsEnv = readEnv("HTTPS_PROXY");
 	const httpEnv = readEnv("HTTP_PROXY");
 	const allEnv = readEnv("ALL_PROXY");
@@ -80,7 +107,9 @@ function readFromEnv(): ProxyConfig | null {
  * Campos ausentes são tratados como desligados. Retorna `null` quando nenhum
  * proxy HTTP(S) está habilitado.
  */
-export function parseScutilProxy(output: string): ProxyConfig | null {
+export function parseScutilProxy(
+	output: string,
+): Omit<ProxyConfig, "mode" | "resolvedAt"> | null {
 	const scalars: Record<string, string> = {};
 	const exceptions: string[] = [];
 	let inExceptions = false;
@@ -143,18 +172,50 @@ export function parseScutilProxy(output: string): ProxyConfig | null {
 	};
 }
 
-async function readFromScutil(): Promise<ProxyConfig | null> {
+// scutil normalmente responde em milissegundos. Timeout defensivo para não
+// bloquear o boot indefinidamente em cenários patológicos (macOS com serviços
+// de rede travados). Após o timeout retornamos null — o chamador trata como
+// "sem proxy via sistema".
+const SCUTIL_TIMEOUT_MS = 3000;
+
+async function readFromScutil(): Promise<Omit<
+	ProxyConfig,
+	"mode" | "resolvedAt"
+> | null> {
+	const proc = Bun.spawn(["scutil", "--proxy"], {
+		stdout: "pipe",
+		stderr: "pipe",
+	});
 	try {
-		const proc = Bun.spawn(["scutil", "--proxy"], {
-			stdout: "pipe",
-			stderr: "pipe",
-		});
 		const stream = proc.stdout;
-		const stdout = stream ? await new Response(stream).text() : "";
-		const code = await proc.exited;
-		if (code !== 0) return null;
+		const readStdout = stream
+			? new Response(stream).text()
+			: Promise.resolve("");
+		const timeoutSignal = Symbol("scutil-timeout");
+		const timeout = new Promise<typeof timeoutSignal>((resolve) => {
+			setTimeout(() => resolve(timeoutSignal), SCUTIL_TIMEOUT_MS);
+		});
+		const exited = await Promise.race([proc.exited, timeout]);
+		if (exited === timeoutSignal) {
+			console.warn(
+				`[proxy] scutil --proxy excedeu ${SCUTIL_TIMEOUT_MS}ms, abortando leitura`,
+			);
+			try {
+				proc.kill();
+			} catch {
+				/* ignore */
+			}
+			return null;
+		}
+		if (exited !== 0) return null;
+		const stdout = await readStdout;
 		return parseScutilProxy(stdout);
 	} catch {
+		try {
+			proc.kill();
+		} catch {
+			/* ignore */
+		}
 		return null;
 	}
 }
@@ -200,54 +261,120 @@ export function getProxyFor(url: string | URL): string | null {
 	return parsed.protocol === "https:" ? cached.httpsProxy : cached.httpProxy;
 }
 
-/**
- * Descobre e armazena a configuração de proxy. Chamar uma vez no startup
- * antes de qualquer fetch. Nunca lança.
- */
-export async function initProxy(): Promise<ProxyConfig> {
-	const fromEnv = readFromEnv();
-	if (fromEnv) {
-		cached = fromEnv;
-		console.log(
-			`[proxy] configurado via env vars: https=${fromEnv.httpsProxy ?? "-"} http=${fromEnv.httpProxy ?? "-"} no_proxy=${fromEnv.noProxy.length}`,
-		);
-		return cached;
-	}
-
-	const fromScutil = await readFromScutil();
-	if (fromScutil) {
-		cached = fromScutil;
-		propagateToEnv(fromScutil);
-		console.log(
-			`[proxy] configurado via scutil: https=${fromScutil.httpsProxy ?? "-"} http=${fromScutil.httpProxy ?? "-"} no_proxy=${fromScutil.noProxy.length}`,
-		);
-		return cached;
-	}
-
-	cached = {
+function emptyConfig(mode: ProxyMode): ProxyConfig {
+	return {
 		httpsProxy: null,
 		httpProxy: null,
 		noProxy: [],
 		source: "none",
+		mode,
+		resolvedAt: Date.now(),
 	};
-	console.log("[proxy] nenhum proxy configurado");
-	return cached;
+}
+
+async function resolveForMode(mode: ProxyMode): Promise<ProxyConfig> {
+	if (mode === "none") {
+		clearProxyEnv();
+		return emptyConfig("none");
+	}
+
+	if (mode === "env") {
+		const fromEnv = readFromEnv();
+		if (fromEnv) {
+			return { ...fromEnv, mode, resolvedAt: Date.now() };
+		}
+		return emptyConfig("env");
+	}
+
+	if (mode === "system") {
+		const fromScutil = await readFromScutil();
+		if (fromScutil) {
+			const cfg: ProxyConfig = { ...fromScutil, mode, resolvedAt: Date.now() };
+			propagateToEnv(cfg, { overwrite: true });
+			return cfg;
+		}
+		return emptyConfig("system");
+	}
+
+	// auto
+	const fromEnv = readFromEnv();
+	if (fromEnv) {
+		return { ...fromEnv, mode: "auto", resolvedAt: Date.now() };
+	}
+	const fromScutil = await readFromScutil();
+	if (fromScutil) {
+		const cfg: ProxyConfig = {
+			...fromScutil,
+			mode: "auto",
+			resolvedAt: Date.now(),
+		};
+		propagateToEnv(cfg, { overwrite: false });
+		return cfg;
+	}
+	return emptyConfig("auto");
+}
+
+function logResolved(cfg: ProxyConfig): void {
+	console.log(
+		`[proxy] mode=${cfg.mode} source=${cfg.source} https=${cfg.httpsProxy ?? "-"} http=${cfg.httpProxy ?? "-"} no_proxy=${cfg.noProxy.length}`,
+	);
 }
 
 /**
- * Propaga os valores resolvidos para process.env para que subprocessos (Claude
- * CLI) e SDKs de terceiros (PostHog) que respeitam HTTPS_PROXY/HTTP_PROXY
- * também passem pelo proxy. Preserva valores já definidos pelo usuário.
+ * Descobre e armazena a configuração de proxy. Chamar uma vez no startup
+ * antes de qualquer fetch. Pode ser chamada novamente para trocar de modo,
+ * mas subprocessos já vivos não enxergam a mudança. Nunca lança.
  */
-function propagateToEnv(config: ProxyConfig): void {
-	if (config.httpsProxy && !readEnv("HTTPS_PROXY")) {
+export async function initProxy(
+	mode: ProxyMode = "auto",
+): Promise<ProxyConfig> {
+	const cfg = await resolveForMode(mode);
+	cached = cfg;
+	logResolved(cfg);
+	return cfg;
+}
+
+/**
+ * Re-resolve via `scutil --proxy` quando o modo ativo é "system" ou "auto".
+ * Útil quando o usuário troca o proxy do macOS com o app já rodando. Para
+ * outros modos, retorna o status atual sem mudar nada.
+ */
+export async function reloadFromSystem(): Promise<ProxyStatus> {
+	if (!cached) {
+		return getProxyStatus();
+	}
+	if (cached.mode !== "system" && cached.mode !== "auto") {
+		return getProxyStatus();
+	}
+	const cfg = await resolveForMode(cached.mode);
+	cached = cfg;
+	logResolved(cfg);
+	return getProxyStatus();
+}
+
+/**
+ * Propaga os valores resolvidos para process.env. Quando o modo é "system",
+ * sobrescreve para forçar subprocessos a usarem o proxy do sistema. Quando o
+ * modo é "auto" (fallback), preserva valores já definidos pelo usuário.
+ */
+function propagateToEnv(
+	config: ProxyConfig,
+	{ overwrite }: { overwrite: boolean },
+): void {
+	if (config.httpsProxy && (overwrite || !readEnv("HTTPS_PROXY"))) {
 		process.env.HTTPS_PROXY = config.httpsProxy;
 	}
-	if (config.httpProxy && !readEnv("HTTP_PROXY")) {
+	if (config.httpProxy && (overwrite || !readEnv("HTTP_PROXY"))) {
 		process.env.HTTP_PROXY = config.httpProxy;
 	}
-	if (config.noProxy.length > 0 && !readEnv("NO_PROXY")) {
+	if (config.noProxy.length > 0 && (overwrite || !readEnv("NO_PROXY"))) {
 		process.env.NO_PROXY = config.noProxy.join(",");
+	}
+}
+
+function clearProxyEnv(): void {
+	for (const key of PROXY_ENV_KEYS) {
+		if (process.env[key] !== undefined) delete process.env[key];
 	}
 }
 
@@ -256,6 +383,30 @@ function propagateToEnv(config: ProxyConfig): void {
  */
 export function getProxyConfig(): ProxyConfig | null {
 	return cached;
+}
+
+/**
+ * Snapshot serializável para o renderer/UI.
+ */
+export function getProxyStatus(): ProxyStatus {
+	if (!cached) {
+		return {
+			mode: "auto",
+			source: "none",
+			httpsProxy: null,
+			httpProxy: null,
+			noProxyCount: 0,
+			resolvedAt: 0,
+		};
+	}
+	return {
+		mode: cached.mode,
+		source: cached.source,
+		httpsProxy: cached.httpsProxy,
+		httpProxy: cached.httpProxy,
+		noProxyCount: cached.noProxy.length,
+		resolvedAt: cached.resolvedAt,
+	};
 }
 
 /** Reset interno para testes. */
