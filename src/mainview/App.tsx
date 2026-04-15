@@ -144,7 +144,11 @@ function PaletteContent() {
 		) {
 			const timer = setTimeout(
 				handleSearch,
-				activeProvider.id === "calc" ? 100 : 300,
+				activeProvider.id === "calc"
+					? 100
+					: activeProvider.id === "apps"
+						? 0
+						: 300,
 			);
 			return () => clearTimeout(timer);
 		}
