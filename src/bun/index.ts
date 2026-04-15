@@ -8,10 +8,11 @@ import { chatRpc, mainRpc, setMainWindow, setOpenChatCallback } from "./rpc";
 import { loadSettings } from "./settings";
 
 // Carrega settings antes de qualquer fetch para que o modo de proxy escolhido
-// pelo usuário (auto/system/env/none) seja respeitado desde o startup. Propaga
-// HTTPS_PROXY para subprocessos (Claude CLI) e SDKs de terceiros (PostHog).
+// pelo usuário (auto/system/env/none/manual) seja respeitado desde o startup.
+// Propaga HTTPS_PROXY para subprocessos (Claude CLI) e SDKs de terceiros
+// (PostHog). Em modo manual, a senha vem do Keychain.
 const bootSettings = await loadSettings();
-await initProxy(bootSettings.proxy?.mode ?? "auto");
+await initProxy(bootSettings.proxy?.mode ?? "auto", bootSettings.proxy?.manual);
 
 // Load native helper for window overlay on fullscreen
 // import.meta.dir points to Resources/app/bun/ in the bundle

@@ -6,7 +6,10 @@ import {
 	getProxyFor,
 	getProxyStatus,
 	initProxy,
+	manualAccountId,
+	PROXY_KEYCHAIN_SERVICE,
 	parseScutilProxy,
+	redactProxyUrl,
 	reloadFromSystem,
 	shouldBypassProxy,
 } from "./proxy";
@@ -476,6 +479,218 @@ describe("readFromScutil timeout", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe("parseScutilProxy → PAC", () => {
+	it("detecta ProxyAutoConfigURLString e source=pac", () => {
+		const out = `<dictionary> {
+  ExceptionsList : <array> {
+    0 : *.local
+  }
+  HTTPEnable : 0
+  HTTPSEnable : 0
+  ProxyAutoConfigEnable : 1
+  ProxyAutoConfigURLString : http://wpad.corp/proxy.pac
+}`;
+		const result = parseScutilProxy(out);
+		expect(result).not.toBeNull();
+		expect(result?.source).toBe("pac");
+		expect(result?.pacUrl).toBe("http://wpad.corp/proxy.pac");
+		expect(result?.httpsProxy).toBeNull();
+	});
+
+	it("source=scutil+pac quando PAC e proxy estático coexistem", () => {
+		const out = `<dictionary> {
+  HTTPSEnable : 1
+  HTTPSProxy : proxy.corp
+  HTTPSPort : 8443
+  ProxyAutoConfigEnable : 1
+  ProxyAutoConfigURLString : http://wpad.corp/proxy.pac
+}`;
+		const result = parseScutilProxy(out);
+		expect(result?.source).toBe("scutil+pac");
+		expect(result?.httpsProxy).toBe("http://proxy.corp:8443");
+		expect(result?.pacUrl).toBe("http://wpad.corp/proxy.pac");
+	});
+
+	it("ignora PAC quando ProxyAutoConfigEnable=0", () => {
+		const out = `<dictionary> {
+  HTTPSEnable : 1
+  HTTPSProxy : proxy.corp
+  HTTPSPort : 8443
+  ProxyAutoConfigEnable : 0
+  ProxyAutoConfigURLString : http://wpad.corp/proxy.pac
+}`;
+		const result = parseScutilProxy(out);
+		expect(result?.source).toBe("scutil");
+		expect(result?.pacUrl).toBeUndefined();
+	});
+});
+
+describe("redactProxyUrl", () => {
+	it("preserva URLs sem credenciais sem normalização", () => {
+		expect(redactProxyUrl("http://proxy:8080")).toBe("http://proxy:8080");
+	});
+
+	it("redige senha preservando usuário", () => {
+		const r = redactProxyUrl("http://alice:s3cret@proxy:8080");
+		expect(r).not.toBeNull();
+		expect(r).toContain("alice");
+		expect(r).toContain("***");
+		expect(r).not.toContain("s3cret");
+	});
+
+	it("retorna null para null", () => {
+		expect(redactProxyUrl(null)).toBeNull();
+	});
+
+	it("retorna url original quando parsing falha", () => {
+		expect(redactProxyUrl("not-a-url@")).toBe("not-a-url@");
+	});
+});
+
+describe("manualAccountId", () => {
+	it("compõe identificador padrão protocolo://host:porta", () => {
+		expect(
+			manualAccountId({
+				protocol: "http",
+				host: "proxy.corp",
+				port: 8080,
+				hasPassword: false,
+				noProxy: [],
+			}),
+		).toBe("http://proxy.corp:8080");
+	});
+});
+
+describe("initProxy → mode=manual", () => {
+	function mockSecurityFind(password: string, exitCode = 0) {
+		(Bun as unknown as { spawn: unknown }).spawn = ((...args: unknown[]) => {
+			const cmd = args[0] as string[];
+			const isFind =
+				cmd[0] === "security" && cmd.includes("find-generic-password");
+			return {
+				stdout: new Response(isFind ? password : "").body,
+				stderr: new Response("").body,
+				exited: Promise.resolve(isFind ? exitCode : 1),
+				exitCode: isFind ? exitCode : 1,
+				kill: () => {},
+			};
+		}) as typeof Bun.spawn;
+	}
+
+	it("monta URL com usuário e senha do Keychain", async () => {
+		mockSecurityFind("s3cret\n");
+		const cfg = await initProxy("manual", {
+			protocol: "http",
+			host: "proxy.corp",
+			port: 8080,
+			username: "alice",
+			hasPassword: true,
+			noProxy: [],
+		});
+		expect(cfg.source).toBe("manual");
+		expect(cfg.httpsProxy).toBe("http://alice:s3cret@proxy.corp:8080");
+		expect(cfg.httpProxy).toBe("http://alice:s3cret@proxy.corp:8080");
+		expect(cfg.manualAccount).toBe("http://proxy.corp:8080");
+	});
+
+	it("encode safe de chars especiais na senha", async () => {
+		mockSecurityFind("p@ss:word/!\n");
+		const cfg = await initProxy("manual", {
+			protocol: "https",
+			host: "proxy.corp",
+			port: 443,
+			username: "bob",
+			hasPassword: true,
+			noProxy: [],
+		});
+		// encodeURIComponent("p@ss:word/!") = "p%40ss%3Aword%2F!"
+		expect(cfg.httpsProxy).toContain("bob:p%40ss%3Aword%2F!@proxy.corp:443");
+	});
+
+	it("propaga HTTPS_PROXY para process.env com overwrite", async () => {
+		process.env.HTTPS_PROXY = "http://old-env:1";
+		mockSecurityFind("pw\n");
+		await initProxy("manual", {
+			protocol: "http",
+			host: "proxy.corp",
+			port: 8080,
+			username: "alice",
+			hasPassword: true,
+			noProxy: [],
+		});
+		expect(process.env.HTTPS_PROXY).toBe("http://alice:pw@proxy.corp:8080");
+	});
+
+	it("sem username gera URL sem credencial", async () => {
+		mockSecurityFind("", 44);
+		const cfg = await initProxy("manual", {
+			protocol: "http",
+			host: "proxy.corp",
+			port: 3128,
+			hasPassword: false,
+			noProxy: [],
+		});
+		expect(cfg.httpsProxy).toBe("http://proxy.corp:3128");
+	});
+
+	it("hasPassword=true mas Keychain vazio cai para sem senha", async () => {
+		mockSecurityFind("", 44);
+		const cfg = await initProxy("manual", {
+			protocol: "http",
+			host: "proxy.corp",
+			port: 3128,
+			username: "alice",
+			hasPassword: true,
+			noProxy: [],
+		});
+		expect(cfg.httpsProxy).toBe("http://alice@proxy.corp:3128");
+	});
+
+	it("manual sem config retorna source=none", async () => {
+		const cfg = await initProxy("manual");
+		expect(cfg.source).toBe("none");
+		expect(cfg.mode).toBe("manual");
+	});
+
+	it("noProxy é aplicado em getProxyFor", async () => {
+		mockSecurityFind("pw\n");
+		await initProxy("manual", {
+			protocol: "http",
+			host: "proxy.corp",
+			port: 8080,
+			username: "alice",
+			hasPassword: true,
+			noProxy: ["*.internal"],
+		});
+		expect(getProxyFor("https://api.internal")).toBeNull();
+		expect(getProxyFor("https://api.github.com")).toBe(
+			"http://alice:pw@proxy.corp:8080",
+		);
+	});
+
+	it("status redige senha antes de expor ao renderer", async () => {
+		mockSecurityFind("s3cret\n");
+		await initProxy("manual", {
+			protocol: "http",
+			host: "proxy.corp",
+			port: 8080,
+			username: "alice",
+			hasPassword: true,
+			noProxy: [],
+		});
+		const status = getProxyStatus();
+		expect(status.httpsProxy).toContain("alice");
+		expect(status.httpsProxy).toContain("***");
+		expect(status.httpsProxy).not.toContain("s3cret");
+	});
+});
+
+describe("PROXY_KEYCHAIN_SERVICE", () => {
+	it("é a constante única compartilhada com o RPC", () => {
+		expect(PROXY_KEYCHAIN_SERVICE).toBe("com.ptolomeu.app.proxy");
 	});
 });
 

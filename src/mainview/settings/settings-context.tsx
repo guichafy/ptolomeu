@@ -12,6 +12,7 @@ import {
 	type AnalyticsSettings,
 	type ClaudeSettings,
 	type CustomFilter,
+	type ManualProxyProtocol,
 	type ProxyMode,
 	type ProxySettings,
 	rpc,
@@ -19,6 +20,23 @@ import {
 	type SettingsSection,
 	setOpenPreferencesHandler,
 } from "../providers/rpc";
+
+export interface ManualProxyDraft {
+	protocol: ManualProxyProtocol;
+	host: string;
+	port: number;
+	username: string;
+	/** string vazia = não alterar senha; usado quando hasPassword já é true. */
+	password: string;
+	noProxy: string;
+}
+
+export interface TestProxyResult {
+	ok: boolean;
+	status?: number;
+	latencyMs: number;
+	error?: string;
+}
 
 interface SettingsContextValue {
 	settings: Settings | null;
@@ -30,6 +48,11 @@ interface SettingsContextValue {
 	updateAnalyticsConsent: (consentGiven: boolean) => void;
 	proxySettings: ProxySettings;
 	updateProxyMode: (mode: ProxyMode) => void;
+	saveManualProxy: (
+		draft: ManualProxyDraft & { changePassword: boolean },
+	) => Promise<{ ok: boolean; error?: string }>;
+	clearManualProxy: () => Promise<void>;
+	testProxyConnection: () => Promise<TestProxyResult>;
 	isOpen: boolean;
 	initialSection: SettingsSection | null;
 	openDialog: (section?: SettingsSection) => void;
@@ -210,6 +233,57 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 		[scheduleSave],
 	);
 
+	const saveManualProxy = useCallback(
+		async (draft: ManualProxyDraft & { changePassword: boolean }) => {
+			const noProxy = draft.noProxy
+				.split(/\r?\n|,/)
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0);
+			const result = await rpc.request.saveManualProxy({
+				protocol: draft.protocol,
+				host: draft.host.trim(),
+				port: draft.port,
+				username: draft.username.trim() || undefined,
+				// Apenas envia password quando o usuário explicitamente quer alterar.
+				password: draft.changePassword ? draft.password : undefined,
+				noProxy,
+			});
+			if (result.ok) {
+				try {
+					const loaded = await rpc.request.loadSettings();
+					setSettings(loaded);
+				} catch {
+					/* mantém estado atual — UI reflete tentativa */
+				}
+			}
+			return result;
+		},
+		[],
+	);
+
+	const clearManualProxy = useCallback(async () => {
+		await rpc.request.clearManualProxy();
+		try {
+			const loaded = await rpc.request.loadSettings();
+			setSettings(loaded);
+		} catch {
+			/* noop */
+		}
+	}, []);
+
+	const testProxyConnection =
+		useCallback(async (): Promise<TestProxyResult> => {
+			try {
+				return await rpc.request.testProxyConnection({});
+			} catch (err) {
+				return {
+					ok: false,
+					latencyMs: 0,
+					error: err instanceof Error ? err.message : String(err),
+				};
+			}
+		}, []);
+
 	const openDialog = useCallback((section?: SettingsSection) => {
 		setInitialSection(section ?? null);
 		setIsOpen(true);
@@ -236,6 +310,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 				updateAnalyticsConsent,
 				proxySettings,
 				updateProxyMode,
+				saveManualProxy,
+				clearManualProxy,
+				testProxyConnection,
 				isOpen,
 				initialSection,
 				openDialog,

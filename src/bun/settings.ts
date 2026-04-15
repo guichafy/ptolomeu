@@ -53,10 +53,27 @@ export interface ClaudeSettings {
 	permissionMode: ClaudePermissionMode;
 }
 
-export type ProxyMode = "auto" | "system" | "env" | "none";
+export type ProxyMode = "auto" | "system" | "env" | "none" | "manual";
+
+export type ManualProxyProtocol = "http" | "https";
+
+export interface ManualProxySettings {
+	protocol: ManualProxyProtocol;
+	host: string;
+	port: number;
+	username?: string;
+	/**
+	 * Flag indicando que há uma senha salva no Keychain. A senha em si nunca
+	 * aparece em settings.json — é armazenada via `security` CLI (service
+	 * `com.ptolomeu.app.proxy`, account `${protocol}://${host}:${port}`).
+	 */
+	hasPassword: boolean;
+	noProxy: string[];
+}
 
 export interface ProxySettings {
 	mode: ProxyMode;
+	manual?: ManualProxySettings;
 }
 
 export interface Settings {
@@ -101,7 +118,53 @@ const VALID_PROXY_MODES: readonly ProxyMode[] = [
 	"system",
 	"env",
 	"none",
+	"manual",
 ];
+
+const VALID_MANUAL_PROTOCOLS: readonly ManualProxyProtocol[] = [
+	"http",
+	"https",
+];
+
+function validateManualProxy(value: unknown): ManualProxySettings | null {
+	if (!value || typeof value !== "object") return null;
+	const m = value as Record<string, unknown>;
+	if (
+		typeof m.protocol !== "string" ||
+		!(VALID_MANUAL_PROTOCOLS as readonly string[]).includes(m.protocol)
+	)
+		return null;
+	if (typeof m.host !== "string") return null;
+	const host = m.host.trim();
+	if (!host || /\s|\//.test(host)) return null;
+	if (
+		typeof m.port !== "number" ||
+		!Number.isInteger(m.port) ||
+		m.port < 1 ||
+		m.port > 65535
+	)
+		return null;
+	let username: string | undefined;
+	if (m.username !== undefined) {
+		if (typeof m.username !== "string" || !m.username) return null;
+		username = m.username;
+	}
+	if (typeof m.hasPassword !== "boolean") return null;
+	if (!Array.isArray(m.noProxy)) return null;
+	const noProxy: string[] = [];
+	for (const entry of m.noProxy) {
+		if (typeof entry !== "string") return null;
+		noProxy.push(entry);
+	}
+	return {
+		protocol: m.protocol as ManualProxyProtocol,
+		host,
+		port: m.port,
+		username,
+		hasPassword: m.hasPassword,
+		noProxy,
+	};
+}
 
 const DEFAULT_SETTINGS: Settings = {
 	version: 1,
@@ -240,9 +303,17 @@ export function validateSettings(value: unknown): ValidateResult {
 			(rawProxy as Record<string, unknown>).mode as string,
 		)
 	) {
-		proxy = {
-			mode: (rawProxy as Record<string, unknown>).mode as ProxyMode,
-		};
+		const mode = (rawProxy as Record<string, unknown>).mode as ProxyMode;
+		const rawManual = (rawProxy as Record<string, unknown>).manual;
+		const manual =
+			rawManual !== undefined ? validateManualProxy(rawManual) : null;
+		// Degradação graciosa: mode="manual" sem config válida volta para "auto"
+		// em vez de rejeitar o arquivo inteiro.
+		if (mode === "manual" && !manual) {
+			proxy = { mode: "auto" };
+		} else {
+			proxy = manual ? { mode, manual } : { mode };
+		}
 	} else {
 		proxy = { ...DEFAULT_PROXY_SETTINGS };
 	}
