@@ -37,3 +37,46 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bunx semantic-release
+
+      - name: Detect new release
+        id: release
+        run: |
+          if compgen -G "ptolomeu-*-macos-arm64.zip" > /dev/null; then
+            VERSION=$(jq -r .version package.json)
+            ZIP="ptolomeu-${VERSION}-macos-arm64.zip"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Detected release: v${VERSION}"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "No release produced this run."
+          fi
+
+      - name: Stage Pages mirror
+        if: steps.release.outputs.published == 'true'
+        run: bun run scripts/build-pages-mirror.ts "${{ steps.release.outputs.version }}" "${{ steps.release.outputs.zip }}"
+
+      - name: Deploy to GitHub Pages
+        if: steps.release.outputs.published == 'true'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./pages-dist
+          publish_branch: gh-pages
+          keep_files: true
+          commit_message: "chore(pages): publish v${{ steps.release.outputs.version }} mirror"
+
+      - name: Annotate release with Pages mirror link
+        if: steps.release.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          URL="https://guichafy.github.io/ptolomeu/v${VERSION}/ptolomeu-${VERSION}-macos-arm64.zip"
+          gh release view "v${VERSION}" --json body -q .body > /tmp/body.md
+          {
+            printf '**Download direto (mirror GitHub Pages):** %s\n\n---\n\n' "$URL"
+            cat /tmp/body.md
+          } > /tmp/new-body.md
+          gh release edit "v${VERSION}" --notes-file /tmp/new-body.md
