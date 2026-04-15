@@ -1,3 +1,15 @@
+# [1.5.0](https://github.com/guichafy/ptolomeu/compare/v1.4.0...v1.5.0) (2026-04-15)
+
+
+### Bug Fixes
+
+* **apps:** cache app list and filter synchronously to stop result flicker ([e8c1c7d](https://github.com/guichafy/ptolomeu/commit/e8c1c7d258673231e6840b047898b93b3b573f74))
+
+
+### Features
+
+* **net:** add manual proxy mode with Keychain-backed credentials ([72a7407](https://github.com/guichafy/ptolomeu/commit/72a74077bb238af34d01b5846882e48a08f4d1d3))
+
 # [1.4.0](https://github.com/guichafy/ptolomeu/compare/v1.3.1...v1.4.0) (2026-04-15)
 
 
