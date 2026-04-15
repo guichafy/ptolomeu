@@ -37,12 +37,21 @@ import {
 	type TokenStatus,
 } from "./github-token";
 import {
+	getProxyStatus as getProxyStatusFromModule,
+	type ProxyStatus,
+	reloadFromSystem as reloadProxyFromSystemModule,
+} from "./net/proxy";
+import {
 	loadSettings as loadSettingsFromDisk,
 	type Settings,
 	saveSettings as saveSettingsToDisk,
 } from "./settings";
 
-export type SettingsSection = "plugins" | "general" | "github";
+export type SettingsSection =
+	| "plugins"
+	| "general"
+	| "network"
+	| `plugin:${string}`;
 
 export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 	bun: {
@@ -110,6 +119,8 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				params: { sessionId?: string };
 				response: boolean;
 			};
+			getProxyStatus: { params: void; response: ProxyStatus };
+			reloadProxyFromSystem: { params: void; response: ProxyStatus };
 		};
 		messages: {};
 	};
@@ -326,6 +337,12 @@ function buildRpc() {
 				},
 				saveSettings: async (next) => {
 					return saveSettingsToDisk(next);
+				},
+				getProxyStatus: async () => {
+					return getProxyStatusFromModule();
+				},
+				reloadProxyFromSystem: async () => {
+					return reloadProxyFromSystemModule();
 				},
 				githubGetTokenStatus: async () => {
 					return getGithubTokenStatus();

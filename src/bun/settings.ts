@@ -53,6 +53,12 @@ export interface ClaudeSettings {
 	permissionMode: ClaudePermissionMode;
 }
 
+export type ProxyMode = "auto" | "system" | "env" | "none";
+
+export interface ProxySettings {
+	mode: ProxyMode;
+}
+
 export interface Settings {
 	version: 1;
 	plugins: {
@@ -61,6 +67,7 @@ export interface Settings {
 	github: GitHubSettings;
 	analytics: AnalyticsSettings;
 	claude: ClaudeSettings;
+	proxy: ProxySettings;
 }
 
 export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
@@ -79,11 +86,21 @@ export const DEFAULT_CLAUDE_SETTINGS: ClaudeSettings = {
 	permissionMode: "acceptEdits",
 };
 
+export const DEFAULT_PROXY_SETTINGS: ProxySettings = {
+	mode: "auto",
+};
+
 const VALID_AUTH_MODES: readonly ClaudeAuthMode[] = ["anthropic", "bedrock"];
 const VALID_PERMISSION_MODES: readonly ClaudePermissionMode[] = [
 	"dontAsk",
 	"acceptEdits",
 	"bypassPermissions",
+];
+const VALID_PROXY_MODES: readonly ProxyMode[] = [
+	"auto",
+	"system",
+	"env",
+	"none",
 ];
 
 const DEFAULT_SETTINGS: Settings = {
@@ -94,6 +111,7 @@ const DEFAULT_SETTINGS: Settings = {
 	github: DEFAULT_GITHUB_SETTINGS,
 	analytics: DEFAULT_ANALYTICS_SETTINGS,
 	claude: DEFAULT_CLAUDE_SETTINGS,
+	proxy: DEFAULT_PROXY_SETTINGS,
 };
 
 const MIN_ACTIVE = 1;
@@ -212,6 +230,22 @@ export function validateSettings(value: unknown): ValidateResult {
 	} else {
 		claude = { ...DEFAULT_CLAUDE_SETTINGS };
 	}
+	const rawProxy = (s as Record<string, unknown>).proxy;
+	let proxy: ProxySettings;
+	if (
+		rawProxy &&
+		typeof rawProxy === "object" &&
+		typeof (rawProxy as Record<string, unknown>).mode === "string" &&
+		(VALID_PROXY_MODES as readonly string[]).includes(
+			(rawProxy as Record<string, unknown>).mode as string,
+		)
+	) {
+		proxy = {
+			mode: (rawProxy as Record<string, unknown>).mode as ProxyMode,
+		};
+	} else {
+		proxy = { ...DEFAULT_PROXY_SETTINGS };
+	}
 	return {
 		ok: true,
 		value: {
@@ -220,6 +254,7 @@ export function validateSettings(value: unknown): ValidateResult {
 			github,
 			analytics,
 			claude,
+			proxy,
 		},
 	};
 }

@@ -165,7 +165,7 @@ export const SearchTypeCombobox = forwardRef<
 						className="flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
 						onClick={() => {
 							setOpen(false);
-							openDialog("github");
+							openDialog("plugin:github");
 						}}
 					>
 						<Settings className="h-3 w-3" />
