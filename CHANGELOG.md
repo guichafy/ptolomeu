@@ -1,3 +1,15 @@
+# [1.4.0](https://github.com/guichafy/ptolomeu/compare/v1.3.1...v1.4.0) (2026-04-15)
+
+
+### Bug Fixes
+
+* **github:** hide stale results when query no longer matches last search ([e4972ae](https://github.com/guichafy/ptolomeu/commit/e4972aee4dadffe9e7d80b66ae99115fc3c9ad08))
+
+
+### Features
+
+* **net:** add proxy mode configuration UI in preferences ([07c6eb9](https://github.com/guichafy/ptolomeu/commit/07c6eb91dcd21d21083211c6f8e201ffcdb5af6d))
+
 ## [1.3.1](https://github.com/guichafy/ptolomeu/compare/v1.3.0...v1.3.1) (2026-04-15)
 
 
