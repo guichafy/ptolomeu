@@ -29,7 +29,29 @@ function AppIcon({ appPath }: { appPath: string }) {
 	return createElement("img", { src, className: "h-5 w-5 rounded", alt: "" });
 }
 
-function appToResult(app: { name: string; path: string }): SearchResult {
+type AppEntry = { name: string; path: string };
+
+// Apps list is cached for the palette session so typing filters synchronously
+// over a stable array instead of racing one RPC per keystroke.
+let cachedApps: AppEntry[] | null = null;
+let inFlightLoad: Promise<AppEntry[]> | null = null;
+
+function loadApps(): Promise<AppEntry[]> {
+	if (cachedApps) return Promise.resolve(cachedApps);
+	if (inFlightLoad) return inFlightLoad;
+	inFlightLoad = rpc.request
+		.listApps()
+		.then((apps) => {
+			cachedApps = apps;
+			return apps;
+		})
+		.finally(() => {
+			inFlightLoad = null;
+		});
+	return inFlightLoad;
+}
+
+function appToResult(app: AppEntry): SearchResult {
 	return {
 		id: app.path,
 		title: app.name,
@@ -46,9 +68,18 @@ export const appsProvider: SearchProvider = {
 	label: "Apps",
 	icon: AppWindow,
 	placeholder: "Buscar aplicativos...",
-	search: async (query: string): Promise<SearchResult[]> => {
+	search: async (
+		query: string,
+		signal?: AbortSignal,
+	): Promise<SearchResult[]> => {
+		if (signal?.aborted) {
+			throw new DOMException("Aborted", "AbortError");
+		}
 		try {
-			const apps = await rpc.request.listApps();
+			const apps = await loadApps();
+			if (signal?.aborted) {
+				throw new DOMException("Aborted", "AbortError");
+			}
 
 			if (!query.trim()) {
 				return apps.slice(0, 20).map(appToResult);
@@ -58,7 +89,10 @@ export const appsProvider: SearchProvider = {
 			return apps
 				.filter((app) => app.name.toLowerCase().includes(lowerQuery))
 				.map(appToResult);
-		} catch {
+		} catch (err) {
+			if (err instanceof DOMException && err.name === "AbortError") {
+				throw err;
+			}
 			return [
 				{
 					id: "error",
