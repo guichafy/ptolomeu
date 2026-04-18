@@ -1,4 +1,4 @@
-# [1.5.0](https://github.com/guichafy/ptolomeu/compare/v1.4.0...v1.5.0) (2026-04-15)
+# [0.5.0](https://github.com/guichafy/ptolomeu/compare/v0.4.0...v0.5.0) (2026-04-15)
 
 
 ### Bug Fixes
@@ -10,7 +10,7 @@
 
 * **net:** add manual proxy mode with Keychain-backed credentials ([72a7407](https://github.com/guichafy/ptolomeu/commit/72a74077bb238af34d01b5846882e48a08f4d1d3))
 
-# [1.4.0](https://github.com/guichafy/ptolomeu/compare/v1.3.1...v1.4.0) (2026-04-15)
+# [0.4.0](https://github.com/guichafy/ptolomeu/compare/v0.3.1...v0.4.0) (2026-04-15)
 
 
 ### Bug Fixes
@@ -22,14 +22,14 @@
 
 * **net:** add proxy mode configuration UI in preferences ([07c6eb9](https://github.com/guichafy/ptolomeu/commit/07c6eb91dcd21d21083211c6f8e201ffcdb5af6d))
 
-## [1.3.1](https://github.com/guichafy/ptolomeu/compare/v1.3.0...v1.3.1) (2026-04-15)
+## [0.3.1](https://github.com/guichafy/ptolomeu/compare/v0.3.0...v0.3.1) (2026-04-15)
 
 
 ### Bug Fixes
 
 * **net:** honor system proxy configuration for outbound fetch ([318724e](https://github.com/guichafy/ptolomeu/commit/318724ed7aea337f64868918cbc35ce396fd6f90))
 
-# [1.3.0](https://github.com/guichafy/ptolomeu/compare/v1.2.0...v1.3.0) (2026-04-14)
+# [0.3.0](https://github.com/guichafy/ptolomeu/compare/v0.2.0...v0.3.0) (2026-04-14)
 
 
 ### Bug Fixes
@@ -51,7 +51,7 @@
 * **claude:** add Claude chat integration with streaming, auth, and dedicated chat window ([c18710f](https://github.com/guichafy/ptolomeu/commit/c18710f162e3adb942aa4b8c03f565e3679c5fff))
 * **claude:** add SDK dependency and register claude plugin ([163212a](https://github.com/guichafy/ptolomeu/commit/163212a0acf528fe9a34b1cc0bb04d5a99edf8ed))
 
-# [1.2.0](https://github.com/guichafy/ptolomeu/compare/v1.1.0...v1.2.0) (2026-04-12)
+# [0.2.0](https://github.com/guichafy/ptolomeu/compare/v0.1.0...v0.2.0) (2026-04-12)
 
 
 ### Features
@@ -59,7 +59,7 @@
 * **icons:** use ptolomeu.icns as official app and tray icon ([5e6a0e2](https://github.com/guichafy/ptolomeu/commit/5e6a0e2436552e3661d06a1b2ab277372534251b))
 * **ui:** migrate Tailwind CSS v3 to v4 with CSS-first config ([4a9a384](https://github.com/guichafy/ptolomeu/commit/4a9a384faaa99d2a443ad61028af4d245fde0a4c))
 
-# [1.1.0](https://github.com/guichafy/ptolomeu/compare/v1.0.0...v1.1.0) (2026-04-12)
+# [0.1.0](https://github.com/guichafy/ptolomeu/compare/v0.0.0...v0.1.0) (2026-04-12)
 
 
 ### Bug Fixes
@@ -102,7 +102,7 @@
 * **settings:** move plugin config to hierarchical sidebar with per-provider configComponent ([2445ec3](https://github.com/guichafy/ptolomeu/commit/2445ec351fb941334ae6798ce6c7944b2d1a6c86))
 * **ui:** make mode bar tabs clickable to switch providers ([942e424](https://github.com/guichafy/ptolomeu/commit/942e424d91e0650478228cdd33f8d55dadd98ef9))
 
-# 1.0.0 (2026-04-11)
+# 0.0.0 (2026-04-11)
 
 
 ### Bug Fixes
