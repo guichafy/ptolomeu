@@ -59,7 +59,7 @@
 * **icons:** use ptolomeu.icns as official app and tray icon ([5e6a0e2](https://github.com/guichafy/ptolomeu/commit/5e6a0e2436552e3661d06a1b2ab277372534251b))
 * **ui:** migrate Tailwind CSS v3 to v4 with CSS-first config ([4a9a384](https://github.com/guichafy/ptolomeu/commit/4a9a384faaa99d2a443ad61028af4d245fde0a4c))
 
-# [0.1.0](https://github.com/guichafy/ptolomeu/compare/v0.0.0...v0.1.0) (2026-04-12)
+# [0.1.0](https://github.com/guichafy/ptolomeu/compare/v0.0.1...v0.1.0) (2026-04-12)
 
 
 ### Bug Fixes
@@ -102,7 +102,7 @@
 * **settings:** move plugin config to hierarchical sidebar with per-provider configComponent ([2445ec3](https://github.com/guichafy/ptolomeu/commit/2445ec351fb941334ae6798ce6c7944b2d1a6c86))
 * **ui:** make mode bar tabs clickable to switch providers ([942e424](https://github.com/guichafy/ptolomeu/commit/942e424d91e0650478228cdd33f8d55dadd98ef9))
 
-# 0.0.0 (2026-04-11)
+# 0.0.1 (2026-04-11)
 
 
 ### Bug Fixes
