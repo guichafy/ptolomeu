@@ -2,6 +2,7 @@ import { readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { defineElectrobunRPC, type ElectrobunRPCSchema } from "electrobun/bun";
+import type { AgentEvent } from "@/shared/agent-protocol";
 import { setAnalyticsEnabled, trackEvent } from "./analytics";
 import {
 	type BedrockConfig,
@@ -170,6 +171,10 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeStreamError: { sessionId: string; error: string };
 			claudeOpenSession: { sessionId: string };
 			claudeSessionsUpdate: { sessions: SessionMeta[] };
+			// Typed agent event stream — runs alongside claudeStreamChunk while
+			// the chat UI migrates to AI Elements. Removed when the legacy
+			// accumulator is retired (see plan 2026-04-23, phase 5).
+			agentEvent: { sessionId: string; event: AgentEvent };
 		};
 	};
 }
@@ -611,6 +616,8 @@ claudeSetSender({
 		safeSend("claudeStreamChunk", () =>
 			chatRpc.send.claudeStreamChunk({ sessionId, chunk }),
 		),
+	sendEvent: (sessionId, event) =>
+		safeSend("agentEvent", () => chatRpc.send.agentEvent({ sessionId, event })),
 	sendEnd: (sessionId, result) =>
 		safeSend("claudeStreamEnd", () =>
 			chatRpc.send.claudeStreamEnd({ sessionId, result }),

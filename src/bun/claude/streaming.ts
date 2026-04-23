@@ -1,4 +1,10 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { AgentEvent } from "@/shared/agent-protocol";
+import {
+	buildAgentEvents,
+	createEventMapperContext,
+	type EventMapperContext,
+} from "./event-mapper";
 
 // ---------------------------------------------------------------------------
 // Logging
@@ -19,6 +25,12 @@ const verbose = (...args: unknown[]) => {
  */
 export type StreamMessageSender = {
 	sendChunk: (sessionId: string, chunk: unknown) => void;
+	/**
+	 * Typed agent event channel. Runs in parallel with sendChunk while the
+	 * chat UI migrates to AI Elements. Defaults to no-op so older call sites
+	 * that only wire sendChunk keep working.
+	 */
+	sendEvent?: (sessionId: string, event: AgentEvent) => void;
 	sendEnd: (
 		sessionId: string,
 		result: {
@@ -203,6 +215,14 @@ export async function startStreamingLoop(
 	const pendingThinkingBlocks: PersistBlock[] = [];
 	let chunkCount = 0;
 	let resultCount = 0;
+	const mapperCtx: EventMapperContext = createEventMapperContext();
+
+	function pushAgentEvents(msg: SDKMessage): void {
+		if (!sender.sendEvent) return;
+		for (const event of buildAgentEvents(msg, mapperCtx)) {
+			sender.sendEvent(sessionId, event);
+		}
+	}
 
 	try {
 		for await (const msg of session.stream()) {
@@ -210,6 +230,7 @@ export async function startStreamingLoop(
 			verbose(
 				`[claude:stream] chunk #${chunkCount}: sessionId=${sessionId} type=${msg.type}`,
 			);
+			pushAgentEvents(msg);
 			sender.sendChunk(sessionId, msg);
 
 			// Track thinking blocks from stream_event deltas.
