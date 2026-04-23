@@ -1,10 +1,30 @@
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+
+function injectReactDevtools(mode: string): Plugin {
+	return {
+		name: "inject-react-devtools",
+		apply: "build",
+		transformIndexHtml: {
+			order: "pre",
+			handler() {
+				if (mode !== "development") return;
+				return [
+					{
+						tag: "script",
+						attrs: { src: "http://localhost:8097", async: true },
+						injectTo: "head-prepend",
+					},
+				];
+			},
+		},
+	};
+}
 
 export default defineConfig(({ mode }) => ({
-	plugins: [tailwindcss(), react()],
+	plugins: [injectReactDevtools(mode), tailwindcss(), react()],
 	root: "src/chatview",
 	resolve: {
 		alias: {
@@ -15,7 +35,7 @@ export default defineConfig(({ mode }) => ({
 		outDir: "../../dist-chat",
 		emptyOutDir: mode !== "development",
 		minify: mode !== "development",
-		sourcemap: mode === "development",
+		sourcemap: mode === "development" ? "inline" : false,
 		chunkSizeWarningLimit: 700,
 		rollupOptions: {
 			output: {
