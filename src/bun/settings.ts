@@ -45,7 +45,8 @@ export type ClaudeAuthMode = "anthropic" | "bedrock";
 export type ClaudePermissionMode =
 	| "dontAsk"
 	| "acceptEdits"
-	| "bypassPermissions";
+	| "bypassPermissions"
+	| "plan";
 
 export interface ClaudeSettings {
 	authMode: ClaudeAuthMode;
@@ -119,6 +120,7 @@ const VALID_PERMISSION_MODES: readonly ClaudePermissionMode[] = [
 	"dontAsk",
 	"acceptEdits",
 	"bypassPermissions",
+	"plan",
 ];
 const VALID_PROXY_MODES: readonly ProxyMode[] = [
 	"auto",

@@ -34,7 +34,8 @@ export type ClaudeAuthMode = "anthropic" | "bedrock";
 export type ClaudePermissionMode =
 	| "dontAsk"
 	| "acceptEdits"
-	| "bypassPermissions";
+	| "bypassPermissions"
+	| "plan";
 
 export interface ClaudeSettings {
 	authMode: ClaudeAuthMode;

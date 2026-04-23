@@ -393,6 +393,7 @@ export function ClaudeSection() {
 						<SelectItem value="bypassPermissions">
 							Automático completo
 						</SelectItem>
+						<SelectItem value="plan">Apenas planejar</SelectItem>
 					</SelectContent>
 				</Select>
 			</div>
