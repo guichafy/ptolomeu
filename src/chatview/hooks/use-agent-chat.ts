@@ -75,17 +75,34 @@ export function useAgentChat(sessionId: string | null): UseAgentChatResult {
 	}, []);
 
 	const approveTool = useCallback<UseAgentChatResult["approveTool"]>(
-		async (permissionId, _behavior, _modifiedArgs) => {
-			// Phase 4 wires approve-tool RPC. For now we only drop the prompt
-			// from UI state; the gate isn't plugged into the SDK yet.
-			dispatch({ type: "resolve-permission", permissionId });
+		async (permissionId, behavior, modifiedArgs) => {
+			try {
+				await rpc.request.agentApproveTool({
+					permissionId,
+					behavior,
+					modifiedArgs:
+						behavior === "allow-modified" && modifiedArgs
+							? (modifiedArgs as Record<string, unknown>)
+							: undefined,
+				});
+			} catch (err) {
+				console.error("[agent-chat] approveTool RPC failed:", err);
+			} finally {
+				dispatch({ type: "resolve-permission", permissionId });
+			}
 		},
 		[],
 	);
 
 	const rejectTool = useCallback<UseAgentChatResult["rejectTool"]>(
-		async (permissionId, _reason) => {
-			dispatch({ type: "resolve-permission", permissionId });
+		async (permissionId, reason) => {
+			try {
+				await rpc.request.agentRejectTool({ permissionId, reason });
+			} catch (err) {
+				console.error("[agent-chat] rejectTool RPC failed:", err);
+			} finally {
+				dispatch({ type: "resolve-permission", permissionId });
+			}
 		},
 		[],
 	);

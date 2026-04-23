@@ -25,6 +25,7 @@ import type {
 import { useAgentChat } from "../../hooks/use-agent-chat";
 import { onOpenSession, rpc } from "../../rpc";
 import { ChatHeader } from "../chat-header";
+import { ConfirmationQueue } from "./confirmation-queue";
 import { MessagePart as MessagePartRenderer } from "./message-parts";
 
 function toLegacySessionState(
@@ -69,7 +70,8 @@ function AgentMessageView({ message }: { message: AgentMessageType }) {
 
 export function ChatPaneV2() {
 	const [sessionId, setSessionId] = useState<string | null>(null);
-	const { state, sendMessage, cancel } = useAgentChat(sessionId);
+	const { state, sendMessage, cancel, approveTool, rejectTool } =
+		useAgentChat(sessionId);
 	const [draft, setDraft] = useState("");
 
 	useEffect(() => {
@@ -118,6 +120,11 @@ export function ChatPaneV2() {
 			</Conversation>
 
 			<div className="flex flex-col gap-2 border-t border-border/60 bg-background p-3">
+				<ConfirmationQueue
+					pending={state.pendingPermissions}
+					onApprove={approveTool}
+					onReject={rejectTool}
+				/>
 				{state.suggestions.length > 0 && (
 					<Suggestions>
 						{state.suggestions.map((suggestion) => (
