@@ -1,5 +1,5 @@
 import { type ElectrobunRPCSchema, Electroview } from "electrobun/view";
-import type { AgentEvent } from "@/shared/agent-protocol";
+import type { AgentEvent, ApproveBehavior } from "@/shared/agent-protocol";
 
 const VERBOSE = import.meta.env.VITE_CLAUDE_LOG_VERBOSE === "1";
 const verbose = (...args: unknown[]) => {
@@ -226,6 +226,18 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeGetBedrock: { params: void; response: BedrockConfig | null };
 			claudeOpenChat: {
 				params: { sessionId?: string };
+				response: boolean;
+			};
+			agentApproveTool: {
+				params: {
+					permissionId: string;
+					behavior: ApproveBehavior;
+					modifiedArgs?: Record<string, unknown>;
+				};
+				response: boolean;
+			};
+			agentRejectTool: {
+				params: { permissionId: string; reason?: string };
 				response: boolean;
 			};
 		};

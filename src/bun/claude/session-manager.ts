@@ -1,12 +1,18 @@
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { SDKSession } from "@anthropic-ai/claude-agent-sdk";
+import type {
+	CanUseTool,
+	PermissionResult,
+	SDKSession,
+} from "@anthropic-ai/claude-agent-sdk";
 import {
 	unstable_v2_createSession,
 	unstable_v2_resumeSession,
 } from "@anthropic-ai/claude-agent-sdk";
 import { loadSettings } from "../settings";
+import { PermissionGate } from "./permission-gate";
+import { ToolDecisionStore } from "./persistence/tool-decisions";
 import type {
 	MessagePersister,
 	PersistBlock,
@@ -181,6 +187,66 @@ let sender: StreamMessageSender = {
  */
 export function setSender(s: StreamMessageSender): void {
 	sender = s;
+}
+
+// ---------------------------------------------------------------------------
+// HITL permission gate (phase 4)
+// ---------------------------------------------------------------------------
+
+const toolDecisionStore = new ToolDecisionStore();
+
+const permissionGate = new PermissionGate({
+	onDecision: (record) => {
+		if (!activeSessionId) return;
+		toolDecisionStore.append(activeSessionId, record).catch((err) => {
+			console.error("[claude:permission] audit write failed:", err);
+		});
+	},
+});
+
+/**
+ * Expose the shared permission gate so the RPC layer can forward
+ * approve/reject commands from the renderer. The gate is a singleton —
+ * there is only one active Claude session at a time.
+ */
+export function getPermissionGate(): PermissionGate {
+	return permissionGate;
+}
+
+/**
+ * Build the canUseTool callback that the Agent SDK invokes before executing
+ * a tool. Emits a tool-permission-request event to the renderer and returns
+ * a promise the SDK awaits; the renderer resolves it via
+ * agentApproveTool/agentRejectTool RPCs.
+ */
+function buildCanUseTool(sessionId: string): CanUseTool {
+	return async (toolName, input, options): Promise<PermissionResult> => {
+		const { permissionId, request, promise } = permissionGate.request({
+			toolCallId: options.toolUseID,
+			toolName,
+			args: input,
+			decisionReason: options.decisionReason,
+			blockedPath: options.blockedPath,
+		});
+
+		sender.sendEvent?.(sessionId, {
+			type: "tool-permission-request",
+			permissionId,
+			toolCallId: options.toolUseID,
+			toolName,
+			args: input,
+			decisionReason: request.risk.reason ?? options.decisionReason,
+			blockedPath: options.blockedPath,
+		});
+
+		const decision = await promise;
+		if (decision.behavior === "allow") {
+			return decision.updatedInput
+				? { behavior: "allow", updatedInput: decision.updatedInput }
+				: { behavior: "allow", updatedInput: input };
+		}
+		return { behavior: "deny", message: decision.message };
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +444,7 @@ export async function createSession(
 		permissionMode,
 		pathToClaudeCodeExecutable: claudePath,
 		allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "LS"],
+		canUseTool: buildCanUseTool(id),
 	});
 	verbose(`[claude:session] SDK session created: id=${id}`);
 	// Send the initial prompt — the SDK session needs a user message to begin
@@ -481,6 +548,7 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 		const sdkSession = unstable_v2_resumeSession(meta.sdkSessionId, {
 			model,
 			pathToClaudeCodeExecutable: claudePath,
+			canUseTool: buildCanUseTool(sessionId),
 		});
 
 		activeSession = sdkSession;
@@ -563,6 +631,7 @@ export async function sendMessage(message: string): Promise<void> {
 	const sdkSession = unstable_v2_resumeSession(meta.sdkSessionId, {
 		model,
 		pathToClaudeCodeExecutable: claudePath,
+		canUseTool: buildCanUseTool(internalId),
 	});
 	verbose(
 		`[claude:session] sendMessage: new SDK session resumed from sdkSessionId=${meta.sdkSessionId}`,
@@ -592,6 +661,15 @@ export async function stopGeneration(): Promise<boolean> {
 		`[claude:session] stopGeneration: activeId=${activeSessionId ?? "null"}`,
 	);
 	if (!activeSession) return false;
+
+	// Release any tool-permission promises the SDK is awaiting. The close()
+	// below races them; cancelling explicitly avoids leaking deny timers.
+	const cancelled = permissionGate.cancelAll("generation stopped");
+	if (cancelled > 0) {
+		console.log(
+			`[claude:session] stopGeneration: cancelled ${cancelled} pending permissions`,
+		);
+	}
 
 	try {
 		activeSession.close();
