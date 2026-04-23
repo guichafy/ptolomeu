@@ -4,7 +4,12 @@
  * `claude.useAiElements` setting — phase 5 retires the legacy pane.
  */
 
-import { useEffect, useState } from "react";
+import { Paperclip, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+	type Attachment,
+	Attachments,
+} from "@/components/ai-elements/attachments";
 import {
 	Conversation,
 	ConversationContent,
@@ -18,6 +23,7 @@ import {
 	PromptInputToolbar,
 } from "@/components/ai-elements/prompt-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
+import { Button } from "@/components/ui/button";
 import type {
 	AgentMessage as AgentMessageType,
 	SessionState,
@@ -27,6 +33,9 @@ import { onOpenSession, rpc } from "../../rpc";
 import { ChatHeader } from "../chat-header";
 import { ConfirmationQueue } from "./confirmation-queue";
 import { MessagePart as MessagePartRenderer } from "./message-parts";
+
+const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 function toLegacySessionState(
 	state: SessionState,
@@ -68,11 +77,31 @@ function AgentMessageView({ message }: { message: AgentMessageType }) {
 	);
 }
 
+async function fileToAttachment(file: File): Promise<Attachment | null> {
+	if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) return null;
+	if (file.size > MAX_IMAGE_BYTES) return null;
+	const dataUrl = await new Promise<string>((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => resolve(String(reader.result));
+		reader.onerror = () => reject(reader.error);
+		reader.readAsDataURL(file);
+	});
+	return {
+		id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+		dataUrl,
+		mimeType: file.type,
+		name: file.name,
+		sizeBytes: file.size,
+	};
+}
+
 export function ChatPaneV2() {
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const { state, sendMessage, cancel, approveTool, rejectTool } =
 		useAgentChat(sessionId);
 	const [draft, setDraft] = useState("");
+	const [attachments, setAttachments] = useState<Attachment[]>([]);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		onOpenSession(({ sessionId: sid }) => {
@@ -85,19 +114,42 @@ export function ChatPaneV2() {
 
 	const handleSubmit = async () => {
 		const text = draft.trim();
-		if (!text) return;
-		setDraft("");
 		if (state.sessionState === "running") {
 			await cancel();
 			return;
 		}
-		await sendMessage(text);
+		if (!text && attachments.length === 0) return;
+
+		// Image attachments are staged client-side today; wiring them into the
+		// SDK's MessageParam[] content is a follow-up (session-manager needs a
+		// sendMessageParts path). For now, prefix the text with a reminder.
+		const prefix =
+			attachments.length > 0
+				? `[${attachments.length} anexo${attachments.length > 1 ? "s" : ""} pendente${attachments.length > 1 ? "s" : ""} — envio multimodal chega em um follow-up]\n`
+				: "";
+		setDraft("");
+		setAttachments([]);
+		await sendMessage(`${prefix}${text}`);
 	};
+
+	const handleFilesSelected = async (files: FileList | null) => {
+		if (!files) return;
+		const next: Attachment[] = [];
+		for (const file of Array.from(files)) {
+			const attachment = await fileToAttachment(file);
+			if (attachment) next.push(attachment);
+		}
+		if (next.length > 0) setAttachments((prev) => [...prev, ...next]);
+	};
+
+	const removeAttachment = (id: string) =>
+		setAttachments((prev) => prev.filter((a) => a.id !== id));
 
 	const messages = state.currentMessage
 		? [...state.messages, state.currentMessage]
 		: state.messages;
 	const status = state.sessionState === "running" ? "streaming" : "ready";
+	const hasSubmittableContent = Boolean(draft.trim()) || attachments.length > 0;
 
 	return (
 		<div className="flex h-screen flex-col bg-background text-foreground">
@@ -105,6 +157,7 @@ export function ChatPaneV2() {
 				sessionId={sessionId}
 				sessionState={toLegacySessionState(state.sessionState)}
 			/>
+			<PlanModeBanner />
 			<Conversation>
 				<ConversationContent>
 					{messages.length === 0 && (
@@ -136,6 +189,7 @@ export function ChatPaneV2() {
 						))}
 					</Suggestions>
 				)}
+				<Attachments items={attachments} onRemove={removeAttachment} />
 				<PromptInput onSubmit={handleSubmit}>
 					<PromptInputTextarea
 						value={draft}
@@ -144,13 +198,63 @@ export function ChatPaneV2() {
 						disabled={state.sessionState === "error"}
 					/>
 					<PromptInputToolbar>
+						<input
+							ref={fileInputRef}
+							type="file"
+							accept={ACCEPTED_IMAGE_TYPES.join(",")}
+							multiple
+							className="hidden"
+							onChange={(e) => {
+								handleFilesSelected(e.target.files).catch(() => {});
+								e.target.value = "";
+							}}
+						/>
+						<Button
+							type="button"
+							size="sm"
+							variant="ghost"
+							onClick={() => fileInputRef.current?.click()}
+							className="h-8 w-8 p-0 text-muted-foreground"
+							aria-label="Anexar imagem"
+						>
+							<Paperclip className="h-3.5 w-3.5" />
+						</Button>
+						<span className="flex-1" />
 						<PromptInputSubmit
 							status={status}
-							disabled={!draft.trim() && status !== "streaming"}
+							disabled={!hasSubmittableContent && status !== "streaming"}
 						/>
 					</PromptInputToolbar>
 				</PromptInput>
 			</div>
+		</div>
+	);
+}
+
+/**
+ * Banner surfaced above the conversation when the session runs under
+ * `permissionMode: "plan"`. Reads settings once at mount — the setting is
+ * only consulted at session creation so a live update wouldn't affect the
+ * current session anyway.
+ */
+function PlanModeBanner() {
+	const [planMode, setPlanMode] = useState(false);
+	useEffect(() => {
+		rpc.request
+			.loadSettings()
+			.then((settings) =>
+				setPlanMode(settings.claude.permissionMode === "plan"),
+			)
+			.catch(() => {});
+	}, []);
+	if (!planMode) return null;
+	return (
+		<div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-600 dark:text-amber-300">
+			<Sparkles className="h-3 w-3" />
+			<span>
+				Modo Planejamento ativo — o agente apenas descreve um plano, sem
+				executar ferramentas.
+			</span>
 		</div>
 	);
 }

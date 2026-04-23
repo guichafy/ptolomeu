@@ -125,17 +125,17 @@ eventos; UI legacy ainda ativa.
 
 ## Fase 5 — Rich content + MCP + Plan
 
-| # | Tarefa | Arquivos | Critério |
+| # | Tarefa | Status | Notas |
 |---|---|---|---|
-| 5.1 | `mcp-loader.ts`: lê `~/.ptolomeu/mcp-servers.json`, valida schema, injeta em `SessionConfig.mcpServers` | novo | User declara server, agent vê tools |
-| 5.2 | Settings UI "MCP Servers" em `claude-section.tsx` (form: name, command, args[], env{}) | `src/mainview/settings/claude-section.tsx` | CRUD persistido |
-| 5.3 | AI Elements `artifact`, `code-block`, `sources`, `inline-citation`, `attachments`, `plan` | `src/components/ui/` | Compila |
-| 5.4 | Heurística de artifact em `tool-result`: mime/linguagem/tamanho → `<Artifact>` + `<CodeBlock>` | `chat-v2/artifact-viewer.tsx` | Code blocks longos viram artifact |
-| 5.5 | `<Sources>` + `<InlineCitation>` para `WebSearch`/`WebFetch` results | `chat-v2/sources-panel.tsx` | URLs → chips clicáveis |
-| 5.6 | `<Attachments>`: upload imagem (png/jpeg/webp, ≤5MB) → base64 → `MessageContent` array | `prompt-composer.tsx` | Validação mimetype |
-| 5.7 | `<Plan>`: `permissionMode === "plan"` + `Task` output → lista de steps | `chat-v2/plan-view.tsx` | Modo plan distinto |
-| 5.8 | Flip `useAiElements` default → `true`. Remover componentes legados e `claudeStreamChunk` | `App.tsx`, `rpc.ts` | E2E verde |
-| 5.9 | E2E Appium smoke: abrir chat, enviar "oi", receber resposta | `test/e2e/claude-chat.e2e.ts` | `bun run test:e2e` verde |
+| 5.1 | `mcp-loader.ts` + `~/.ptolomeu/mcp-servers.json` + session-manager integration | ✅ | `McpLoader` + 12 testes. Injetado nos 3 sites (`unstable_v2_createSession`, ambos `unstable_v2_resumeSession`). |
+| 5.2 | Settings UI "MCP Servers" | ✅ | `McpServersSection` em `src/mainview/settings/mcp-servers.tsx`. RPCs `agentListMcpServers` / `agentSaveMcpServers`. |
+| 5.3 | AI Elements: `artifact`, `code-block`, `sources`, `inline-citation`, `attachments` | ✅ | Implementados localmente em `src/components/ai-elements/`, API-compat com o registry oficial. |
+| 5.4 | Heurística de artifact em `tool-result` | ✅ | Output ≥20 linhas ou ≥1200 chars vira `<Artifact>` + `<CodeBlock>`; linguagem inferida do `file_path` arg. |
+| 5.5 | `<Sources>` / `<InlineCitation>` para `WebSearch`/`WebFetch` | ✅ | Resultado com `{url, title?}` (ou `{results:[...]}`) vira chips clicáveis. |
+| 5.6 | Attachments no composer | ⚠️ Parcial | Picker + preview prontos (png/jpeg/webp, ≤5MB). **Envio multimodal deferido**: requer extender `claudeSendMessage` para aceitar `MessagePart[]` e mapear para `SDKUserMessage.message.content` com `image` blocks. Por ora, o composer notifica o usuário que anexos ficam pendentes. |
+| 5.7 | Plan mode | ✅ Indicador | Banner `PlanModeBanner` acima da Conversation quando `permissionMode === "plan"`. Render estruturado da saída de `ExitPlanMode` ainda é oportunidade de polish futura. |
+| 5.8 | Flip `useAiElements` default → `true` + remover legado | ⏸ Deferido | Precisa verificação manual UI (criar sessão, enviar mensagens, aprovar tools, rodar com um MCP server real) em build dev ou canary antes de flipar. Remoção do `claudeStreamChunk` legado também precisa dessa verificação. |
+| 5.9 | E2E Appium smoke | ⏸ Deferido | Requer macOS + Xcode + `appium-mac2-driver` instalado. Infraestrutura CI existente (`bun run test:e2e`) pode acomodar; deixa-se para sessão de dev local. |
 
 ## Riscos
 
