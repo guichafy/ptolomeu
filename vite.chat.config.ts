@@ -16,6 +16,28 @@ export default defineConfig(({ mode }) => ({
 		emptyOutDir: mode !== "development",
 		minify: mode !== "development",
 		sourcemap: mode === "development",
+		chunkSizeWarningLimit: 700,
+		rollupOptions: {
+			output: {
+				manualChunks(id) {
+					if (!id.includes("node_modules")) return;
+					if (id.includes("@radix-ui")) return "vendor-radix";
+					if (id.includes("react-syntax-highlighter") || id.includes("refractor")) {
+						return "vendor-syntax-highlighter";
+					}
+					if (id.includes("react-markdown") || id.includes("remark") || id.includes("rehype")) {
+						return "vendor-markdown";
+					}
+					if (
+						id.includes("/react-dom/") ||
+						id.includes("/react/") ||
+						id.includes("/scheduler/")
+					) {
+						return "vendor-react";
+					}
+				},
+			},
+		},
 	},
 	optimizeDeps: {
 		include: [
@@ -24,7 +46,6 @@ export default defineConfig(({ mode }) => ({
 			"react/jsx-runtime",
 			"react-markdown",
 			"react-syntax-highlighter",
-			"react-syntax-highlighter/dist/esm/styles/prism",
 			"lucide-react",
 			"clsx",
 			"tailwind-merge",

@@ -17,6 +17,25 @@ export default defineConfig(({ mode }) => ({
 		emptyOutDir: mode !== "development",
 		minify: mode !== "development",
 		sourcemap: mode === "development",
+		chunkSizeWarningLimit: 700,
+		rollupOptions: {
+			output: {
+				manualChunks(id) {
+					if (!id.includes("node_modules")) return;
+					if (id.includes("@radix-ui")) return "vendor-radix";
+					if (id.includes("@dnd-kit")) return "vendor-dnd";
+					if (id.includes("cmdk")) return "vendor-cmdk";
+					if (id.includes("posthog-js")) return "vendor-posthog";
+					if (
+						id.includes("/react-dom/") ||
+						id.includes("/react/") ||
+						id.includes("/scheduler/")
+					) {
+						return "vendor-react";
+					}
+				},
+			},
+		},
 	},
 	optimizeDeps: {
 		include: [
