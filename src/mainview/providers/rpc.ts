@@ -263,6 +263,18 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				params: { sessionId?: string };
 				response: boolean;
 			};
+			agentApproveTool: {
+				params: {
+					permissionId: string;
+					behavior: import("@/shared/agent-protocol").ApproveBehavior;
+					modifiedArgs?: Record<string, unknown>;
+				};
+				response: boolean;
+			};
+			agentRejectTool: {
+				params: { permissionId: string; reason?: string };
+				response: boolean;
+			};
 			getProxyStatus: { params: void; response: ProxyStatus };
 			reloadProxyFromSystem: { params: void; response: ProxyStatus };
 			saveManualProxy: {

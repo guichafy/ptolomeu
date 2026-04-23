@@ -2,7 +2,7 @@ import { readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { defineElectrobunRPC, type ElectrobunRPCSchema } from "electrobun/bun";
-import type { AgentEvent } from "@/shared/agent-protocol";
+import type { AgentEvent, ApproveBehavior } from "@/shared/agent-protocol";
 import { setAnalyticsEnabled, trackEvent } from "./analytics";
 import {
 	type BedrockConfig,
@@ -22,6 +22,7 @@ import {
 	sendMessage as claudeSendMessage,
 	setSender as claudeSetSender,
 	stopGeneration as claudeStopGeneration,
+	getPermissionGate,
 	type SessionMeta,
 	type StoredMessageV2,
 } from "./claude/session-manager";
@@ -125,6 +126,19 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeGetBedrock: { params: void; response: BedrockConfig | null };
 			claudeOpenChat: {
 				params: { sessionId?: string };
+				response: boolean;
+			};
+			// HITL tool-permission commands (phase 4).
+			agentApproveTool: {
+				params: {
+					permissionId: string;
+					behavior: ApproveBehavior;
+					modifiedArgs?: Record<string, unknown>;
+				};
+				response: boolean;
+			};
+			agentRejectTool: {
+				params: { permissionId: string; reason?: string };
 				response: boolean;
 			};
 			getProxyStatus: { params: void; response: ProxyStatus };
@@ -579,6 +593,24 @@ function buildRpc() {
 					);
 					openChatCallback?.(sessionId);
 					return true;
+				},
+				agentApproveTool: async ({ permissionId, behavior, modifiedArgs }) => {
+					const ok = getPermissionGate().approve(
+						permissionId,
+						behavior,
+						modifiedArgs,
+					);
+					console.log(
+						`[claude:rpc] agentApproveTool: permissionId=${permissionId} behavior=${behavior} ok=${ok}`,
+					);
+					return ok;
+				},
+				agentRejectTool: async ({ permissionId, reason }) => {
+					const ok = getPermissionGate().reject(permissionId, reason);
+					console.log(
+						`[claude:rpc] agentRejectTool: permissionId=${permissionId} ok=${ok}`,
+					);
+					return ok;
 				},
 			},
 		},
