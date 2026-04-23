@@ -11,6 +11,7 @@ import {
 	unstable_v2_resumeSession,
 } from "@anthropic-ai/claude-agent-sdk";
 import { loadSettings } from "../settings";
+import { mcpLoader } from "./mcp-loader";
 import { PermissionGate } from "./permission-gate";
 import { ToolDecisionStore } from "./persistence/tool-decisions";
 import type {
@@ -437,6 +438,13 @@ export async function createSession(
 
 	// Resolve the Claude CLI path
 	const claudePath = await findClaudeCli();
+	const mcpServers = await mcpLoader.resolve();
+	const mcpNames = Object.keys(mcpServers);
+	if (mcpNames.length > 0) {
+		verbose(
+			`[claude:session] MCP servers enabled: id=${id} servers=[${mcpNames.join(",")}]`,
+		);
+	}
 
 	// Create the SDK session
 	const sdkSession = unstable_v2_createSession({
@@ -445,6 +453,7 @@ export async function createSession(
 		pathToClaudeCodeExecutable: claudePath,
 		allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "LS"],
 		canUseTool: buildCanUseTool(id),
+		...(mcpNames.length > 0 ? { mcpServers } : {}),
 	});
 	verbose(`[claude:session] SDK session created: id=${id}`);
 	// Send the initial prompt — the SDK session needs a user message to begin
@@ -545,10 +554,12 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 
 	try {
 		const claudePath = await findClaudeCli();
+		const mcpServers = await mcpLoader.resolve();
 		const sdkSession = unstable_v2_resumeSession(meta.sdkSessionId, {
 			model,
 			pathToClaudeCodeExecutable: claudePath,
 			canUseTool: buildCanUseTool(sessionId),
+			...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
 		});
 
 		activeSession = sdkSession;
@@ -627,11 +638,13 @@ export async function sendMessage(message: string): Promise<void> {
 	const settings = await loadSettings();
 	const { model } = settings.claude;
 	const claudePath = await findClaudeCli();
+	const mcpServers = await mcpLoader.resolve();
 
 	const sdkSession = unstable_v2_resumeSession(meta.sdkSessionId, {
 		model,
 		pathToClaudeCodeExecutable: claudePath,
 		canUseTool: buildCanUseTool(internalId),
+		...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
 	});
 	verbose(
 		`[claude:session] sendMessage: new SDK session resumed from sdkSessionId=${meta.sdkSessionId}`,
