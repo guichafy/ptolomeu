@@ -13,6 +13,7 @@ import {
 	logoutAnthropicSSO,
 	setBedrockConfig,
 } from "./claude/auth";
+import { mcpLoader, type StoredMcpServer } from "./claude/mcp-loader";
 import {
 	createSession as claudeCreateSession,
 	deleteSession as claudeDeleteSession,
@@ -139,6 +140,11 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			agentRejectTool: {
 				params: { permissionId: string; reason?: string };
+				response: boolean;
+			};
+			agentListMcpServers: { params: void; response: StoredMcpServer[] };
+			agentSaveMcpServers: {
+				params: { servers: StoredMcpServer[] };
 				response: boolean;
 			};
 			getProxyStatus: { params: void; response: ProxyStatus };
@@ -611,6 +617,22 @@ function buildRpc() {
 						`[claude:rpc] agentRejectTool: permissionId=${permissionId} ok=${ok}`,
 					);
 					return ok;
+				},
+				agentListMcpServers: async () => {
+					const file = await mcpLoader.load();
+					return file.servers;
+				},
+				agentSaveMcpServers: async ({ servers }) => {
+					try {
+						await mcpLoader.save({ version: 1, servers });
+						console.log(
+							`[claude:rpc] agentSaveMcpServers: count=${servers.length}`,
+						);
+						return true;
+					} catch (err) {
+						console.error("[claude:rpc] agentSaveMcpServers failed:", err);
+						return false;
+					}
 				},
 			},
 		},

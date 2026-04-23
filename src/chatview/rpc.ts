@@ -49,6 +49,14 @@ export interface ClaudeSettings {
 	useAiElements: boolean;
 }
 
+export interface StoredMcpServer {
+	name: string;
+	command: string;
+	args?: string[];
+	env?: Record<string, string>;
+	enabled?: boolean;
+}
+
 export interface Settings {
 	version: 1;
 	plugins: {
@@ -238,6 +246,11 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			agentRejectTool: {
 				params: { permissionId: string; reason?: string };
+				response: boolean;
+			};
+			agentListMcpServers: { params: void; response: StoredMcpServer[] };
+			agentSaveMcpServers: {
+				params: { servers: StoredMcpServer[] };
 				response: boolean;
 			};
 		};

@@ -43,6 +43,14 @@ export interface ClaudeSettings {
 	useAiElements: boolean;
 }
 
+export interface McpServerEntry {
+	name: string;
+	command: string;
+	args?: string[];
+	env?: Record<string, string>;
+	enabled?: boolean;
+}
+
 export type ProxyMode = "auto" | "system" | "env" | "none" | "manual";
 
 export type ManualProxyProtocol = "http" | "https";
@@ -273,6 +281,11 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			agentRejectTool: {
 				params: { permissionId: string; reason?: string };
+				response: boolean;
+			};
+			agentListMcpServers: { params: void; response: McpServerEntry[] };
+			agentSaveMcpServers: {
+				params: { servers: McpServerEntry[] };
 				response: boolean;
 			};
 			getProxyStatus: { params: void; response: ProxyStatus };

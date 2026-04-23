@@ -19,6 +19,7 @@ import {
 	type ClaudePermissionMode,
 	rpc,
 } from "../providers/rpc";
+import { McpServersSection } from "./mcp-servers";
 import { useSettings } from "./settings-context";
 
 export function ClaudeSection() {
@@ -421,6 +422,10 @@ export function ClaudeSection() {
 					/>
 				</div>
 			</div>
+
+			<Separator className="opacity-40" />
+
+			<McpServersSection />
 
 			<Separator className="opacity-40" />
 
