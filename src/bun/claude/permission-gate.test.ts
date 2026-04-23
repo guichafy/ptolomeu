@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PermissionGate } from "./permission-gate";
+import { type DecisionRecord, PermissionGate } from "./permission-gate";
+import type { RiskClassification } from "./risk-classifier";
+
+const SAFE: RiskClassification = { level: "safe", bypassWhitelist: false };
+const DANGEROUS: RiskClassification = {
+	level: "dangerous",
+	bypassWhitelist: true,
+	reason: "test",
+};
 
 describe("PermissionGate", () => {
 	let idCounter = 0;
@@ -15,8 +23,16 @@ describe("PermissionGate", () => {
 		vi.useRealTimers();
 	});
 
-	const makeGate = (timeoutMs = 60_000) =>
-		new PermissionGate({ timeoutMs, generateId, now });
+	const makeGate = (
+		overrides: Partial<ConstructorParameters<typeof PermissionGate>[0]> = {},
+	) =>
+		new PermissionGate({
+			timeoutMs: 60_000,
+			generateId,
+			now,
+			classify: () => SAFE,
+			...overrides,
+		});
 
 	const makeRequest = (gate: PermissionGate, overrides = {}) =>
 		gate.request({
@@ -126,7 +142,7 @@ describe("PermissionGate", () => {
 
 	describe("timeout", () => {
 		it("auto-denies after timeoutMs with a descriptive message", async () => {
-			const gate = makeGate(30_000);
+			const gate = makeGate({ timeoutMs: 30_000 });
 			const { promise } = makeRequest(gate);
 			vi.advanceTimersByTime(30_000);
 			await expect(promise).resolves.toEqual({
@@ -137,7 +153,7 @@ describe("PermissionGate", () => {
 		});
 
 		it("does not fire once the request is approved", async () => {
-			const gate = makeGate(10_000);
+			const gate = makeGate({ timeoutMs: 10_000 });
 			const { permissionId, promise } = makeRequest(gate);
 			vi.advanceTimersByTime(5_000);
 			expect(gate.approve(permissionId, "allow")).toBe(true);
@@ -178,6 +194,166 @@ describe("PermissionGate", () => {
 		it("cancelAll returns 0 when nothing is pending", () => {
 			const gate = makeGate();
 			expect(gate.cancelAll()).toBe(0);
+		});
+	});
+
+	describe("risk classifier on request", () => {
+		it("attaches the classification to the request payload", () => {
+			const gate = makeGate({ classify: () => DANGEROUS });
+			const { request } = makeRequest(gate);
+			expect(request.risk).toEqual(DANGEROUS);
+		});
+
+		it("defaults to the real classifyRisk when no override is provided", () => {
+			const gate = new PermissionGate({
+				timeoutMs: 60_000,
+				generateId,
+				now,
+			});
+			const { request } = gate.request({
+				toolCallId: "t1",
+				toolName: "Bash",
+				args: { command: "rm -rf /tmp/foo" },
+			});
+			expect(request.risk.level).toBe("dangerous");
+			expect(request.risk.bypassWhitelist).toBe(true);
+		});
+	});
+
+	describe("session whitelist (always-allow-this-session)", () => {
+		it("approve with always-allow-this-session adds the (tool, args) pair to the whitelist", async () => {
+			const gate = makeGate();
+			const a = makeRequest(gate);
+			expect(gate.approve(a.permissionId, "always-allow-this-session")).toBe(
+				true,
+			);
+			await a.promise;
+			expect(gate.whitelistSize).toBe(1);
+		});
+
+		it("subsequent request with the same (tool, args) resolves immediately as allow without pending entry", async () => {
+			const gate = makeGate();
+			const a = makeRequest(gate);
+			gate.approve(a.permissionId, "always-allow-this-session");
+			await a.promise;
+
+			const b = makeRequest(gate); // same toolName + args
+			await expect(b.promise).resolves.toEqual({ behavior: "allow" });
+			expect(gate.size).toBe(0); // never hit the pending map
+		});
+
+		it("dangerous tools bypass the whitelist — even after always-allow, next request still prompts", async () => {
+			const gate = makeGate({ classify: () => DANGEROUS });
+			const a = makeRequest(gate);
+			gate.approve(a.permissionId, "always-allow-this-session");
+			await a.promise;
+			// always-allow should NOT have been added for a dangerous tool.
+			expect(gate.whitelistSize).toBe(0);
+			const b = makeRequest(gate);
+			expect(gate.size).toBe(1);
+			gate.reject(b.permissionId);
+			await b.promise;
+		});
+
+		it("allow-modified does not populate the whitelist", async () => {
+			const gate = makeGate();
+			const a = makeRequest(gate);
+			gate.approve(a.permissionId, "allow-modified", { cmd: "ls -la" });
+			await a.promise;
+			expect(gate.whitelistSize).toBe(0);
+		});
+
+		it("whitelist is keyed by exact args — different args still prompt", async () => {
+			const gate = makeGate();
+			const a = makeRequest(gate, { args: { cmd: "ls" } });
+			gate.approve(a.permissionId, "always-allow-this-session");
+			await a.promise;
+			const b = makeRequest(gate, { args: { cmd: "pwd" } });
+			expect(gate.size).toBe(1);
+			gate.reject(b.permissionId);
+			await b.promise;
+		});
+
+		it("clearWhitelist empties the session whitelist", () => {
+			const gate = makeGate();
+			const a = makeRequest(gate);
+			gate.approve(a.permissionId, "always-allow-this-session");
+			expect(gate.whitelistSize).toBe(1);
+			gate.clearWhitelist();
+			expect(gate.whitelistSize).toBe(0);
+		});
+	});
+
+	describe("onDecision audit hook", () => {
+		it("fires once per decision with source=user-approved on plain allow", async () => {
+			const records: DecisionRecord[] = [];
+			const gate = makeGate({ onDecision: (r) => records.push(r) });
+			const { permissionId, promise } = makeRequest(gate);
+			gate.approve(permissionId, "allow");
+			await promise;
+			expect(records).toHaveLength(1);
+			expect(records[0]).toMatchObject({
+				permissionId: "perm_1",
+				toolName: "Bash",
+				source: "user-approved",
+				decision: { behavior: "allow" },
+			});
+		});
+
+		it("source=user-modified when allow-modified", async () => {
+			const records: DecisionRecord[] = [];
+			const gate = makeGate({ onDecision: (r) => records.push(r) });
+			const { permissionId, promise } = makeRequest(gate);
+			gate.approve(permissionId, "allow-modified", { cmd: "echo 1" });
+			await promise;
+			expect(records[0].source).toBe("user-modified");
+		});
+
+		it("source=user-rejected for reject, with the deny message", async () => {
+			const records: DecisionRecord[] = [];
+			const gate = makeGate({ onDecision: (r) => records.push(r) });
+			const { permissionId, promise } = makeRequest(gate);
+			gate.reject(permissionId, "unsafe");
+			await promise;
+			expect(records[0]).toMatchObject({
+				source: "user-rejected",
+				decision: { behavior: "deny", message: "unsafe" },
+			});
+		});
+
+		it("source=auto-whitelist on whitelist fast-path, without entering pending", async () => {
+			const records: DecisionRecord[] = [];
+			const gate = makeGate({ onDecision: (r) => records.push(r) });
+			const first = makeRequest(gate);
+			gate.approve(first.permissionId, "always-allow-this-session");
+			await first.promise;
+			records.length = 0;
+
+			const second = makeRequest(gate);
+			await second.promise;
+			expect(records).toHaveLength(1);
+			expect(records[0].source).toBe("auto-whitelist");
+		});
+
+		it("source=auto-timeout on timeout", async () => {
+			const records: DecisionRecord[] = [];
+			const gate = makeGate({
+				timeoutMs: 5_000,
+				onDecision: (r) => records.push(r),
+			});
+			const { promise } = makeRequest(gate);
+			vi.advanceTimersByTime(5_000);
+			await promise;
+			expect(records[0].source).toBe("auto-timeout");
+		});
+
+		it("source=auto-cancelled on cancel", async () => {
+			const records: DecisionRecord[] = [];
+			const gate = makeGate({ onDecision: (r) => records.push(r) });
+			const { permissionId, promise } = makeRequest(gate);
+			gate.cancel(permissionId);
+			await promise;
+			expect(records[0].source).toBe("auto-cancelled");
 		});
 	});
 });
