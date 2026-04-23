@@ -186,12 +186,7 @@ export type AgentEvent =
 			type: "task-update";
 			taskId: string;
 			patch: {
-				status?:
-					| "pending"
-					| "running"
-					| "completed"
-					| "failed"
-					| "killed";
+				status?: "pending" | "running" | "completed" | "failed" | "killed";
 				description?: string;
 				endTime?: number;
 				error?: string;
