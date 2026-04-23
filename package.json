@@ -13,7 +13,7 @@
 		"start": "bun run build:native && bun run build:vite && electrobun dev",
 		"dev": "bun run build:native && bun run build:vite && electrobun dev --watch",
 		"devtools": "react-devtools",
-		"dev:hmr": "bun run build:native && bun run build:vite && concurrently \"vite build --watch --mode development\" \"vite build --config vite.chat.config.ts --watch --mode development\" \"electrobun dev --watch\"",
+		"dev:hmr": "bun run build:native && concurrently \"vite build --watch --mode development\" \"vite build --config vite.chat.config.ts --watch --mode development\" \"electrobun dev --watch\"",
 		"hmr": "vite --port 5173",
 		"build:canary": "bun run build:native && bun run build:vite && electrobun build --env=canary",
 		"build:release": "bun run build:native && bun run build:vite && electrobun build --env=stable",
