@@ -1,4 +1,5 @@
 import { type ElectrobunRPCSchema, Electroview } from "electrobun/view";
+import type { AgentEvent } from "@/shared/agent-protocol";
 
 const VERBOSE = import.meta.env.VITE_CLAUDE_LOG_VERBOSE === "1";
 const verbose = (...args: unknown[]) => {
@@ -246,6 +247,7 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			claudeStreamError: { sessionId: string; error: string };
 			claudeOpenSession: { sessionId: string };
+			agentEvent: { sessionId: string; event: AgentEvent };
 		};
 	};
 }
@@ -277,6 +279,21 @@ let streamEndHandler:
 let streamErrorHandler:
 	| ((args: { sessionId: string; error: string }) => void)
 	| null = null;
+
+// Typed agent-event channel. Subscribers see every event the backend emits for
+// any session; filter by sessionId downstream.
+type AgentEventListener = (args: {
+	sessionId: string;
+	event: AgentEvent;
+}) => void;
+const agentEventListeners = new Set<AgentEventListener>();
+
+export function onAgentEvent(listener: AgentEventListener): () => void {
+	agentEventListeners.add(listener);
+	return () => {
+		agentEventListeners.delete(listener);
+	};
+}
 
 export function setStreamHandlers(handlers: {
 	onChunk: (args: { sessionId: string; chunk: unknown }) => void;
@@ -334,6 +351,12 @@ const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 					);
 					pendingOpenSession = args;
 				}
+			},
+			agentEvent: (args) => {
+				verbose(
+					`[chat:rpc] agentEvent: sessionId=${args.sessionId} type=${args.event.type}`,
+				);
+				for (const listener of agentEventListeners) listener(args);
 			},
 		},
 	},
