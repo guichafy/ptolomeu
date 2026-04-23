@@ -40,6 +40,7 @@ export interface ClaudeSettings {
 	authMode: ClaudeAuthMode;
 	model: string;
 	permissionMode: ClaudePermissionMode;
+	useAiElements: boolean;
 }
 
 export type ProxyMode = "auto" | "system" | "env" | "none" | "manual";
