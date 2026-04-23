@@ -6,6 +6,12 @@ import {
 	Wrench,
 } from "lucide-react";
 import { useState } from "react";
+import { Artifact } from "@/components/ai-elements/artifact";
+import {
+	CodeBlock,
+	CodeBlockCopyButton,
+} from "@/components/ai-elements/code-block";
+import { Source, Sources } from "@/components/ai-elements/sources";
 import {
 	Collapsible,
 	CollapsibleContent,
@@ -13,6 +19,9 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import type { AgentToolPart } from "../../hooks/agent-state";
+
+const ARTIFACT_LINE_THRESHOLD = 20;
+const ARTIFACT_CHAR_THRESHOLD = 1200;
 
 function statusIcon(status: AgentToolPart["status"]) {
 	switch (status) {
@@ -50,13 +59,120 @@ function formatResult(value: unknown): string {
 	}
 }
 
+function languageFor(part: AgentToolPart): string | undefined {
+	const args = part.args as Record<string, unknown> | undefined;
+	const path =
+		typeof args?.file_path === "string"
+			? args.file_path
+			: typeof args?.path === "string"
+				? args.path
+				: undefined;
+	if (!path) return undefined;
+	const ext = path.split(".").pop()?.toLowerCase();
+	switch (ext) {
+		case "ts":
+			return "typescript";
+		case "tsx":
+			return "tsx";
+		case "js":
+			return "javascript";
+		case "jsx":
+			return "jsx";
+		case "json":
+			return "json";
+		case "py":
+			return "python";
+		case "rs":
+			return "rust";
+		case "go":
+			return "go";
+		case "md":
+			return "markdown";
+		case "sh":
+		case "bash":
+			return "bash";
+		case "sql":
+			return "sql";
+		case "yml":
+		case "yaml":
+			return "yaml";
+		case "css":
+			return "css";
+		case "html":
+			return "html";
+		default:
+			return ext;
+	}
+}
+
+function isUrlList(
+	value: unknown,
+): value is Array<{ url: string; title?: string }> {
+	if (!Array.isArray(value)) return false;
+	return value.every(
+		(item) =>
+			item &&
+			typeof item === "object" &&
+			typeof (item as { url?: unknown }).url === "string",
+	);
+}
+
+function extractSources(
+	part: AgentToolPart,
+): Array<{ url: string; title?: string }> | null {
+	if (part.toolName !== "WebSearch" && part.toolName !== "WebFetch")
+		return null;
+	const result = part.result;
+	if (!result) return null;
+	if (isUrlList(result)) return result;
+	if (typeof result === "object" && result !== null) {
+		const maybe = (result as { results?: unknown }).results;
+		if (isUrlList(maybe)) return maybe;
+	}
+	return null;
+}
+
+function ResultRenderer({ part }: { part: AgentToolPart }) {
+	const text = formatResult(part.result);
+	if (!text) return null;
+
+	const sources = extractSources(part);
+	if (sources) {
+		return (
+			<Sources>
+				{sources.map((s) => (
+					<Source key={s.url} href={s.url} title={s.title}>
+						{s.title ?? undefined}
+					</Source>
+				))}
+			</Sources>
+		);
+	}
+
+	const lineCount = text.split("\n").length;
+	const looksLikeCode =
+		lineCount >= ARTIFACT_LINE_THRESHOLD ||
+		text.length >= ARTIFACT_CHAR_THRESHOLD;
+	if (looksLikeCode) {
+		const language = languageFor(part) ?? "text";
+		return (
+			<Artifact
+				title={`${part.toolName} output`}
+				subtitle={`${lineCount} linhas • ${text.length} caracteres`}
+			>
+				<CodeBlock code={text} language={language}>
+					<CodeBlockCopyButton code={text} />
+				</CodeBlock>
+			</Artifact>
+		);
+	}
+
+	return <pre className="whitespace-pre-wrap text-foreground/90">{text}</pre>;
+}
+
 export function ToolBlock({ part }: { part: AgentToolPart }) {
 	const [open, setOpen] = useState(part.status === "error");
 	const args = formatArgs(part);
-	const result =
-		part.status === "error"
-			? (part.error?.message ?? "")
-			: formatResult(part.result);
 
 	return (
 		<Collapsible
@@ -95,30 +211,23 @@ export function ToolBlock({ part }: { part: AgentToolPart }) {
 						<pre className="whitespace-pre-wrap text-foreground/90">{args}</pre>
 					</div>
 				)}
-				{result && (
+				{part.status === "error" ? (
 					<div>
-						<div
-							className={cn(
-								"mb-1 text-[10px] uppercase tracking-wide",
-								part.status === "error"
-									? "text-destructive"
-									: "text-muted-foreground",
-							)}
-						>
-							{part.status === "error" ? "Erro" : "Resultado"}
+						<div className="mb-1 text-[10px] uppercase tracking-wide text-destructive">
+							Erro
 						</div>
-						<pre
-							className={cn(
-								"whitespace-pre-wrap",
-								part.status === "error"
-									? "text-destructive"
-									: "text-foreground/90",
-							)}
-						>
-							{result}
+						<pre className="whitespace-pre-wrap text-destructive">
+							{part.error?.message ?? ""}
 						</pre>
 					</div>
-				)}
+				) : part.result !== undefined ? (
+					<div>
+						<div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+							Resultado
+						</div>
+						<ResultRenderer part={part} />
+					</div>
+				) : null}
 			</CollapsibleContent>
 		</Collapsible>
 	);
