@@ -7,9 +7,10 @@ import {
 	APPIUM_HOST,
 	APPIUM_PORT,
 	BUNDLE_ID,
-	Key,
+	ModifierFlag,
 	SCREENSHOTS_DIR,
 	Timing,
+	VKey,
 } from "./constants";
 
 export async function startAppiumServer(): Promise<ChildProcess> {
@@ -95,12 +96,14 @@ export async function typeText(
 	await driver.executeScript("macos: keys", [{ keys }]);
 }
 
-export async function pressKey(
+async function sendVirtualKey(
 	driver: WebdriverIO.Browser,
-	key: string,
+	virtualKeyCode: number,
 	modifierFlags?: number,
 ): Promise<void> {
-	const keyObj: { key: string; modifierFlags?: number } = { key };
+	const keyObj: { virtualKeyCode: number; modifierFlags?: number } = {
+		virtualKeyCode,
+	};
 	if (modifierFlags !== undefined) {
 		keyObj.modifierFlags = modifierFlags;
 	}
@@ -108,15 +111,46 @@ export async function pressKey(
 }
 
 export async function pressTab(driver: WebdriverIO.Browser): Promise<void> {
-	await pressKey(driver, Key.TAB);
+	await sendVirtualKey(driver, VKey.TAB);
 }
 
 export async function pressEnter(driver: WebdriverIO.Browser): Promise<void> {
-	await pressKey(driver, Key.ENTER);
+	await sendVirtualKey(driver, VKey.ENTER);
 }
 
 export async function pressEscape(driver: WebdriverIO.Browser): Promise<void> {
-	await pressKey(driver, Key.ESCAPE);
+	await sendVirtualKey(driver, VKey.ESCAPE);
+}
+
+/**
+ * Select all (Cmd+A) + Backspace. Leaves the input empty without changing
+ * which provider tab is active.
+ */
+export async function clearInput(driver: WebdriverIO.Browser): Promise<void> {
+	await driver.executeScript("macos: keys", [
+		{
+			keys: [{ key: "a", modifierFlags: ModifierFlag.COMMAND }],
+		},
+	]);
+	await sendVirtualKey(driver, VKey.BACKSPACE);
+}
+
+/**
+ * Cycle the provider selector forward until `targetIndex` is active. Caller
+ * is responsible for tracking `currentIndex`. Cycles through a known-size
+ * provider list (`Providers.length` in constants.ts).
+ */
+export async function tabToProvider(
+	driver: WebdriverIO.Browser,
+	currentIndex: number,
+	targetIndex: number,
+	providerCount: number,
+): Promise<void> {
+	const distance = (targetIndex - currentIndex + providerCount) % providerCount;
+	for (let i = 0; i < distance; i++) {
+		await pressTab(driver);
+		await new Promise((r) => setTimeout(r, Timing.POST_TAB));
+	}
 }
 
 let swiftHelperPath: string | null = null;
