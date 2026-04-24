@@ -1,6 +1,6 @@
 {
 	"name": "ptolomeu",
-	"version": "0.7.0",
+	"version": "0.8.0",
 	"description": "macOS menu bar app for searching GitHub repositories, built with Electrobun, React, and Tailwind CSS",
 	"repository": {
 		"type": "git",

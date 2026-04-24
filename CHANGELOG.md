@@ -1,3 +1,18 @@
+# [0.8.0](https://github.com/guichafy/ptolomeu/compare/v0.7.0...v0.8.0) (2026-04-24)
+
+
+### Bug Fixes
+
+* **claude-agent:** defer streaming loop until chat window is ready ([876cb3b](https://github.com/guichafy/ptolomeu/commit/876cb3b91f1048edb9dee746470e872aec204295))
+* **claude-agent:** let MarkdownContent inherit text color from the bubble ([78b2a71](https://github.com/guichafy/ptolomeu/commit/78b2a7145c70016524d81a3cb234ae2a852ea339))
+* **claude-agent:** stop auto-allowing write tools so the workspace jail actually runs ([f093fe3](https://github.com/guichafy/ptolomeu/commit/f093fe3041c3400deb8eeff3f0ca6f77b65d094e))
+
+
+### Features
+
+* **claude-agent:** isolate each conversation in its own project directory ([0cdde1c](https://github.com/guichafy/ptolomeu/commit/0cdde1ca2c27304f313b8cf964b7a464f1a331ef))
+* **claude-agent:** render assistant text as Markdown with GFM tables ([cffefaf](https://github.com/guichafy/ptolomeu/commit/cffefafbb37afb281f28d6b1cb122f7b96693f91))
+
 # [0.7.0](https://github.com/guichafy/ptolomeu/compare/v0.6.0...v0.7.0) (2026-04-24)
 
 
