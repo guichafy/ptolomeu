@@ -106,8 +106,12 @@ const components: Components = {
 };
 
 export function MarkdownContent({ content }: MarkdownContentProps) {
+	// Intentionally no explicit color on the wrapper: we inherit from the
+	// parent so user bubbles (bg-primary / text-primary-foreground) and
+	// assistant bubbles (bg-muted / text-foreground) each stay legible.
+	// Overriding with text-foreground here made user messages white-on-white.
 	return (
-		<div className="text-sm text-foreground">
+		<div className="text-sm">
 			<ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
 				{content}
 			</ReactMarkdown>
