@@ -13,6 +13,7 @@ import {
 import { loadSettings } from "../settings";
 import { mcpLoader } from "./mcp-loader";
 import { PermissionGate } from "./permission-gate";
+import { type Project, ProjectStore } from "./persistence/project-store";
 import { ToolDecisionStore } from "./persistence/tool-decisions";
 import {
 	buildCreateSessionOptions,
@@ -25,6 +26,7 @@ import type {
 	StreamMessageSender,
 } from "./streaming";
 import { startStreamingLoop } from "./streaming";
+import { checkToolInput } from "./workspace-jail";
 
 // ---------------------------------------------------------------------------
 // Logging
@@ -93,7 +95,10 @@ export interface SessionMeta {
 	id: string;
 	sdkSessionId: string;
 	title: string;
-	cwd: string | null;
+	/** Project this conversation belongs to. Many sessions can share one project. */
+	projectId: string;
+	/** Snapshot of the project path — agent's cwd for this session. */
+	projectPath: string;
 	model: string;
 	authMode: "anthropic" | "bedrock";
 	createdAt: string;
@@ -102,8 +107,14 @@ export interface SessionMeta {
 	lastMessage: string;
 }
 
+/**
+ * Version 2 introduces per-conversation project isolation: every session now
+ * references a Project (projectId + projectPath). On read, an index whose
+ * version is anything other than 2 is discarded — the sessions tree predates
+ * the project model and is not worth migrating.
+ */
 export interface SessionIndex {
-	version: 1;
+	version: 2;
 	sessions: SessionMeta[];
 }
 
@@ -169,6 +180,8 @@ function migrateStoredMessage(msg: StoredMessage): StoredMessageV2 {
 const SESSIONS_DIR = join(homedir(), ".ptolomeu", "sessions");
 const INDEX_PATH = join(SESSIONS_DIR, "index.json");
 
+const projectStore = new ProjectStore();
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -220,12 +233,19 @@ export function getPermissionGate(): PermissionGate {
 
 /**
  * Build the canUseTool callback that the Agent SDK invokes before executing
- * a tool. Emits a tool-permission-request event to the renderer and returns
- * a promise the SDK awaits; the renderer resolves it via
- * agentApproveTool/agentRejectTool RPCs.
+ * a tool. Runs the workspace jail first — any Write/Edit/Bash targeting a
+ * path outside `workspace` short-circuits to a hard deny, never reaching
+ * the user's permission prompt. Remaining calls go through the usual HITL
+ * gate, resolved from the renderer via agentApproveTool/agentRejectTool.
  */
-function buildCanUseTool(sessionId: string): CanUseTool {
+function buildCanUseTool(sessionId: string, workspace: string): CanUseTool {
 	return async (toolName, input, options): Promise<PermissionResult> => {
+		const jailed = checkToolInput(workspace, toolName, input);
+		if (!jailed.allowed) {
+			console.warn(`[claude:jail] tool=${toolName} blocked: ${jailed.reason}`);
+			return { behavior: "deny", message: jailed.reason };
+		}
+
 		const { permissionId, request, promise } = permissionGate.request({
 			toolCallId: options.toolUseID,
 			toolName,
@@ -265,21 +285,24 @@ async function ensureSessionsDir(): Promise<void> {
 async function readIndex(): Promise<SessionIndex> {
 	const file = Bun.file(INDEX_PATH);
 	if (!(await file.exists())) {
-		return { version: 1, sessions: [] };
+		return { version: 2, sessions: [] };
 	}
 	try {
 		const parsed = JSON.parse(await file.text());
 		if (
 			parsed &&
 			typeof parsed === "object" &&
-			parsed.version === 1 &&
+			parsed.version === 2 &&
 			Array.isArray(parsed.sessions)
 		) {
 			return parsed as SessionIndex;
 		}
-		return { version: 1, sessions: [] };
+		// Legacy (v1 or malformed) — start fresh. Old session folders remain on
+		// disk but are not listed; users can `rm -rf ~/.ptolomeu/sessions`
+		// manually if they care about reclaiming the space.
+		return { version: 2, sessions: [] };
 	} catch {
-		return { version: 1, sessions: [] };
+		return { version: 2, sessions: [] };
 	}
 }
 
@@ -290,6 +313,16 @@ async function writeIndex(index: SessionIndex): Promise<void> {
 
 function sessionDir(sessionId: string): string {
 	return join(SESSIONS_DIR, sessionId);
+}
+
+/**
+ * Returns the project directory for a session. Prefers the live project
+ * entry (handles renames/moves later) and falls back to the denormalized
+ * snapshot stored on the SessionMeta itself.
+ */
+async function resolveProjectPath(meta: SessionMeta): Promise<string> {
+	const project = await projectStore.get(meta.projectId);
+	return project?.path ?? meta.projectPath;
 }
 
 function messagesPath(sessionId: string): string {
@@ -418,16 +451,35 @@ export async function listSessions(): Promise<SessionMeta[]> {
 /**
  * Creates a new Claude session, sends the initial prompt, and starts the
  * streaming loop. Returns our internal session UUID.
+ *
+ * Each conversation is isolated inside its own project directory. Callers
+ * can pass an existing `projectId` to group multiple conversations under the
+ * same project (shared files/memory across sessions); otherwise a fresh
+ * project is auto-provisioned from the prompt title.
  */
 export async function createSession(
 	prompt: string,
-	cwd?: string,
+	opts: { projectId?: string } = {},
 ): Promise<string> {
 	const t0 = Date.now();
 	const id = crypto.randomUUID();
 
+	// Resolve (or create) the project this conversation belongs to. The
+	// project directory becomes the agent's cwd — every Write/Edit/Bash is
+	// scoped to it, guaranteeing isolation between conversations.
+	let project: Project;
+	if (opts.projectId) {
+		const existing = await projectStore.get(opts.projectId);
+		if (!existing) {
+			throw new Error(`Project not found: ${opts.projectId}`);
+		}
+		project = existing;
+	} else {
+		project = await projectStore.create({ title: generateTitle(prompt) });
+	}
+
 	console.log(
-		`[claude:session] createSession start: id=${id} cwd=${cwd ?? "null"} promptLength=${prompt.length}`,
+		`[claude:session] createSession start: id=${id} projectId=${project.id} path=${project.path} promptLength=${prompt.length}`,
 	);
 	verbose(
 		`[claude:session] createSession prompt preview: id=${id} prompt="${previewText(prompt)}"`,
@@ -456,8 +508,9 @@ export async function createSession(
 			model,
 			permissionMode,
 			claudePath,
-			canUseTool: buildCanUseTool(id),
+			canUseTool: buildCanUseTool(id, project.path),
 			mcpServers,
+			cwd: project.path,
 		}),
 	);
 	verbose(`[claude:session] SDK session created: id=${id}`);
@@ -492,7 +545,8 @@ export async function createSession(
 		id,
 		sdkSessionId,
 		title: generateTitle(prompt),
-		cwd: cwd ?? null,
+		projectId: project.id,
+		projectPath: project.path,
 		model,
 		authMode,
 		createdAt: now,
@@ -560,13 +614,15 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 	try {
 		const claudePath = await findClaudeCli();
 		const mcpServers = await mcpLoader.resolve();
+		const cwd = await resolveProjectPath(meta);
 		const sdkSession = unstable_v2_resumeSession(
 			meta.sdkSessionId,
 			buildResumeSessionOptions({
 				model,
 				claudePath,
-				canUseTool: buildCanUseTool(sessionId),
+				canUseTool: buildCanUseTool(sessionId, cwd),
 				mcpServers,
+				cwd,
 			}),
 		);
 
@@ -647,14 +703,16 @@ export async function sendMessage(message: string): Promise<void> {
 	const { model } = settings.claude;
 	const claudePath = await findClaudeCli();
 	const mcpServers = await mcpLoader.resolve();
+	const cwd = await resolveProjectPath(meta);
 
 	const sdkSession = unstable_v2_resumeSession(
 		meta.sdkSessionId,
 		buildResumeSessionOptions({
 			model,
 			claudePath,
-			canUseTool: buildCanUseTool(internalId),
+			canUseTool: buildCanUseTool(internalId, cwd),
 			mcpServers,
+			cwd,
 		}),
 	);
 	verbose(
@@ -707,7 +765,11 @@ export async function stopGeneration(): Promise<boolean> {
 }
 
 /**
- * Deletes a session's stored data and removes it from the index.
+ * Deletes a session's stored data and removes it from the index. If the
+ * session's project has no other sessions attached, the project folder is
+ * also removed — for today's 1:1 project-per-conversation mapping that
+ * means deleting a conversation wipes its workspace too. The lookup keeps
+ * working once multiple sessions share a project.
  */
 export async function deleteSession(sessionId: string): Promise<boolean> {
 	console.log(`[claude:session] deleteSession start: id=${sessionId}`);
@@ -720,12 +782,21 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 		return false;
 	}
 
-	// If this is the active session, close it first
+	const meta = index.sessions[idx];
+	const { projectId } = meta;
+
+	// If this is the active session, close it and drain its streaming loop
+	// BEFORE touching files — otherwise the loop's final writes can land
+	// after rm and either recreate the dir or error out mid-flush.
 	if (activeSessionId === sessionId && activeSession) {
 		try {
 			activeSession.close();
 		} catch {
 			// Ignore close errors
+		}
+		if (activeStreamingLoop) {
+			await activeStreamingLoop.catch(() => {});
+			activeStreamingLoop = null;
 		}
 		activeSession = null;
 		activeSessionId = null;
@@ -742,6 +813,26 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 		await rm(dir, { recursive: true, force: true });
 	} catch {
 		// Best-effort cleanup
+	}
+
+	// Delete the project folder only when no other session — persisted OR
+	// currently active in memory — still needs it. The in-memory check
+	// matters once multiple sessions share a project: a sibling session
+	// might be mid-flight and not yet persisted.
+	const activeOnProject =
+		activeSessionId !== null && activeSessionId !== sessionId
+			? index.sessions.find((s) => s.id === activeSessionId)?.projectId ===
+				projectId
+			: false;
+	const stillReferenced =
+		activeOnProject || index.sessions.some((s) => s.projectId === projectId);
+	if (!stillReferenced) {
+		await projectStore.delete(projectId).catch((err) => {
+			console.error(
+				"[claude:session] deleteSession: project cleanup failed:",
+				err,
+			);
+		});
 	}
 
 	console.log(`[claude:session] deleteSession done: id=${sessionId}`);
@@ -762,4 +853,9 @@ export async function getSessionMessages(
  */
 export function getActiveSessionId(): string | null {
 	return activeSessionId;
+}
+
+/** Lists all known projects. Exposed for future project-picker UI. */
+export async function listProjects(): Promise<Project[]> {
+	return projectStore.list();
 }

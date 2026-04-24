@@ -10,6 +10,8 @@ const noopCanUseTool: CanUseTool = async () => ({
 	message: "test",
 });
 
+const TEST_CWD = "/tmp/ptolomeu-test-project";
+
 describe("buildCreateSessionOptions", () => {
 	it("sets includePartialMessages=true so the V2 UI receives stream_event deltas", () => {
 		const opts = buildCreateSessionOptions({
@@ -18,6 +20,7 @@ describe("buildCreateSessionOptions", () => {
 			claudePath: "/usr/local/bin/claude",
 			canUseTool: noopCanUseTool,
 			mcpServers: {},
+			cwd: TEST_CWD,
 		});
 		expect(opts.includePartialMessages).toBe(true);
 	});
@@ -29,6 +32,7 @@ describe("buildCreateSessionOptions", () => {
 			claudePath: "/usr/local/bin/claude",
 			canUseTool: noopCanUseTool,
 			mcpServers: {},
+			cwd: TEST_CWD,
 		});
 		expect(opts.model).toBe("claude-sonnet-4-6");
 		expect(opts.pathToClaudeCodeExecutable).toBe("/usr/local/bin/claude");
@@ -42,8 +46,21 @@ describe("buildCreateSessionOptions", () => {
 			claudePath: "/c",
 			canUseTool: noopCanUseTool,
 			mcpServers: {},
+			cwd: TEST_CWD,
 		});
 		expect(opts.canUseTool).toBe(noopCanUseTool);
+	});
+
+	it("propagates cwd so the agent is scoped to the per-conversation project dir", () => {
+		const opts = buildCreateSessionOptions({
+			model: "m",
+			permissionMode: "dontAsk",
+			claudePath: "/c",
+			canUseTool: noopCanUseTool,
+			mcpServers: {},
+			cwd: TEST_CWD,
+		});
+		expect(opts.cwd).toBe(TEST_CWD);
 	});
 
 	it("includes the default allowedTools whitelist", () => {
@@ -53,6 +70,7 @@ describe("buildCreateSessionOptions", () => {
 			claudePath: "/c",
 			canUseTool: noopCanUseTool,
 			mcpServers: {},
+			cwd: TEST_CWD,
 		});
 		expect(opts.allowedTools).toEqual([
 			"Read",
@@ -72,6 +90,7 @@ describe("buildCreateSessionOptions", () => {
 			claudePath: "/c",
 			canUseTool: noopCanUseTool,
 			mcpServers: {},
+			cwd: TEST_CWD,
 		});
 		expect("mcpServers" in opts).toBe(false);
 	});
@@ -86,6 +105,7 @@ describe("buildCreateSessionOptions", () => {
 			claudePath: "/c",
 			canUseTool: noopCanUseTool,
 			mcpServers: mcp,
+			cwd: TEST_CWD,
 		});
 		expect(opts.mcpServers).toBe(mcp);
 	});
@@ -98,6 +118,7 @@ describe("buildResumeSessionOptions", () => {
 			claudePath: "/c",
 			canUseTool: noopCanUseTool,
 			mcpServers: {},
+			cwd: TEST_CWD,
 		});
 		expect(opts.includePartialMessages).toBe(true);
 	});
@@ -108,6 +129,7 @@ describe("buildResumeSessionOptions", () => {
 			claudePath: "/c",
 			canUseTool: noopCanUseTool,
 			mcpServers: {},
+			cwd: TEST_CWD,
 		});
 		expect("permissionMode" in opts).toBe(false);
 	});
@@ -118,8 +140,20 @@ describe("buildResumeSessionOptions", () => {
 			claudePath: "/c",
 			canUseTool: noopCanUseTool,
 			mcpServers: {},
+			cwd: TEST_CWD,
 		});
 		expect("allowedTools" in opts).toBe(false);
+	});
+
+	it("propagates cwd so resumed sessions keep running in the project dir", () => {
+		const opts = buildResumeSessionOptions({
+			model: "m",
+			claudePath: "/c",
+			canUseTool: noopCanUseTool,
+			mcpServers: {},
+			cwd: TEST_CWD,
+		});
+		expect(opts.cwd).toBe(TEST_CWD);
 	});
 
 	it("omits mcpServers when empty and forwards when non-empty", () => {
@@ -128,6 +162,7 @@ describe("buildResumeSessionOptions", () => {
 			claudePath: "/c",
 			canUseTool: noopCanUseTool,
 			mcpServers: {},
+			cwd: TEST_CWD,
 		});
 		expect("mcpServers" in empty).toBe(false);
 
@@ -140,6 +175,7 @@ describe("buildResumeSessionOptions", () => {
 			claudePath: "/c",
 			canUseTool: noopCanUseTool,
 			mcpServers: mcp,
+			cwd: TEST_CWD,
 		});
 		expect(filled.mcpServers).toBe(mcp);
 	});

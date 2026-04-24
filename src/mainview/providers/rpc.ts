@@ -167,7 +167,10 @@ export interface SessionMeta {
 	id: string;
 	sdkSessionId: string;
 	title: string;
-	cwd: string | null;
+	/** Project this conversation belongs to. */
+	projectId: string;
+	/** Snapshot of the project directory (agent's cwd for the session). */
+	projectPath: string;
 	model: string;
 	authMode: "anthropic" | "bedrock";
 	createdAt: string;
@@ -246,7 +249,7 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			claudeListSessions: { params: void; response: SessionMeta[] };
 			claudeCreateSession: {
-				params: { prompt: string; cwd?: string };
+				params: { prompt: string; projectId?: string };
 				response: { sessionId: string };
 			};
 			claudeResumeSession: {
