@@ -73,7 +73,10 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				params: { path: string };
 				response: { icon: string | null };
 			};
-			resizeWindow: { params: { height: number }; response: boolean };
+			resizeWindow: {
+				params: { height: number; width?: number };
+				response: boolean;
+			};
 			loadSettings: { params: void; response: Settings };
 			saveSettings: { params: Settings; response: boolean };
 			githubGetTokenStatus: { params: void; response: TokenStatus };
@@ -375,12 +378,15 @@ function buildRpc() {
 					const icon = await getAppIconBase64(path);
 					return { icon };
 				},
-				resizeWindow: async ({ height }) => {
+				resizeWindow: async ({ height, width }) => {
 					if (mainWindowRef) {
 						const frame = mainWindowRef.getFrame();
-						if (frame.height === height) return true;
+						const nextWidth = width ?? 630;
+						if (frame.height === height && frame.width === nextWidth)
+							return true;
 						const newY = frame.y + (frame.height - height) / 2;
-						mainWindowRef.setFrame(frame.x, newY, 630, height);
+						const newX = frame.x + (frame.width - nextWidth) / 2;
+						mainWindowRef.setFrame(newX, newY, nextWidth, height);
 						return true;
 					}
 					return false;

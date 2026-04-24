@@ -102,9 +102,9 @@ export function SettingsDialog() {
 				if (!open) closeDialog();
 			}}
 		>
-			<DialogContent className="h-[460px] max-w-[600px] gap-0 overflow-hidden p-0">
+			<DialogContent className="flex h-[680px] max-w-[800px] flex-col gap-0 overflow-hidden p-0">
 				<DialogTitle className="sr-only">Preferências</DialogTitle>
-				<div className="flex h-full">
+				<div className="flex min-h-0 flex-1">
 					<aside className="flex w-[168px] flex-col border-r border-border/40 bg-muted/10 px-3 pb-3 pt-4">
 						<span className="mb-3 px-2.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">
 							Preferências

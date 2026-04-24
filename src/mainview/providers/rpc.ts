@@ -216,7 +216,10 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				params: { path: string };
 				response: { icon: string | null };
 			};
-			resizeWindow: { params: { height: number }; response: boolean };
+			resizeWindow: {
+				params: { height: number; width?: number };
+				response: boolean;
+			};
 			loadSettings: { params: void; response: Settings };
 			saveSettings: { params: Settings; response: boolean };
 			githubGetTokenStatus: { params: void; response: TokenStatus };
