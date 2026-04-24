@@ -3,22 +3,22 @@ import {
 	ReasoningContent,
 	ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
-import { cn } from "@/lib/utils";
 import type { AgentPart } from "../../hooks/agent-state";
+import { MarkdownContent } from "../blocks/markdown-content";
 import { ToolBlock } from "./tool-block";
 
 export function MessagePart({ part }: { part: AgentPart }) {
 	switch (part.kind) {
 		case "text":
 			return (
-				<p
-					className={cn(
-						"whitespace-pre-wrap",
-						part.streaming && "after:animate-pulse after:content-['▍']",
+				<div className="relative">
+					<MarkdownContent content={part.text} />
+					{part.streaming && (
+						<span className="ml-0.5 inline-block animate-pulse align-baseline">
+							▍
+						</span>
 					)}
-				>
-					{part.text}
-				</p>
+				</div>
 			);
 		case "reasoning":
 			return (
