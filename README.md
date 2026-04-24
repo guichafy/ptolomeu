@@ -116,20 +116,25 @@ Don't see your tool? Build a plugin and open a PR.
 
 ## Architecture
 
-| Process | Path | Role |
-|---------|------|------|
-| **Main** | `src/bun/` | Runs in Bun. System tray, windows, native FFI, global hotkey. |
-| **Renderer** | `src/mainview/` | React app in BrowserWindow. Command palette, plugins, settings. |
+| Process / view | Path | Role |
+|----------------|------|------|
+| **Main (Bun)** | `src/bun/` | System tray, windows, native FFI, global hotkey, Claude session manager, proxy-aware fetch. |
+| **Palette renderer** | `src/mainview/` | React command palette in a hidden BrowserWindow toggled by ⌘+Shift+Space. |
+| **Chat renderer** | `src/chatview/` | Separate React app for the Claude chat window, lazily created on first open. |
 
 ```
-┌──────────────┐      RPC      ┌───────────────────┐
-│  Main (Bun)   │◄────────────►│  Renderer (React)  │
-│  tray, FFI,   │              │  palette, UI,      │
-│  native APIs  │              │  plugins           │
-└──────────────┘              └───────────────────┘
+                       ┌───────────────────┐
+                  RPC  │  Palette (React)  │
+              ┌──────► │  cmdk, plugins    │
+┌──────────────┐       └───────────────────┘
+│  Main (Bun)   │
+│  tray, FFI,   │       ┌───────────────────┐
+│  Claude SDK   │  RPC  │  Chat (React)     │
+│  proxy, RPC   ├─────► │  AI Elements      │
+└──────────────┘       └───────────────────┘
 ```
 
-See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
+Each window gets its own Electrobun RPC instance (transport-per-window) but shares the same handler set. See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
 
 ## Development
 
