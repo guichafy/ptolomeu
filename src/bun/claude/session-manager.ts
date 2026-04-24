@@ -569,15 +569,15 @@ export async function createSession(
 		`[claude:session] metadata persisted: id=${id} title="${meta.title}"`,
 	);
 
-	// Start the streaming loop (fire-and-forget — it runs until the stream ends)
-	activeStreamingLoop = startStreamingLoop(sdkSession, id, sender, persister)
-		.then(() => syncSdkSessionId(id, sdkSession))
-		.finally(() => {
-			activeStreamingLoop = null;
-		});
+	// Streaming loop start is deferred to the first `resumeSession` call that
+	// arrives from the chat window (triggered when the webview mounts and
+	// acknowledges `openSession`). Starting here races with the transport
+	// setup: early `chatRpc.send.*` calls land before the window can receive
+	// them and `safeSend` silently drops them, leaving the UI stuck waiting
+	// for a `finish` event it will never see.
 
 	console.log(
-		`[claude:session] createSession done: id=${id} (${Date.now() - t0}ms)`,
+		`[claude:session] createSession done: id=${id} (${Date.now() - t0}ms) — streaming deferred until resumeSession`,
 	);
 	return id;
 }
@@ -586,16 +586,36 @@ export async function createSession(
  * Resumes a previously created session by loading its metadata and
  * re-attaching to the SDK session.
  *
- * If this session is already active (e.g. createSession was just called),
- * returns true without creating a new SDK session — avoids duplicate loops.
+ * Doubles as the deferred-start entrypoint for freshly created sessions:
+ * `createSession` leaves the SDK session primed but does not open the
+ * stream, because early events would race the chat window's RPC transport
+ * and vanish. The first `resumeSession` from the newly opened window
+ * triggers `startStreamingLoop` — by then the renderer is subscribed.
  */
 export async function resumeSession(sessionId: string): Promise<boolean> {
 	console.log(`[claude:session] resumeSession start: id=${sessionId}`);
 
 	if (activeSessionId === sessionId && activeSession) {
+		if (activeStreamingLoop) {
+			console.log(
+				`[claude:session] resumeSession: id=${sessionId} stream already running`,
+			);
+			return true;
+		}
 		console.log(
-			`[claude:session] resumeSession: id=${sessionId} already active, skipping`,
+			`[claude:session] resumeSession: starting deferred stream for id=${sessionId}`,
 		);
+		const sdkSession = activeSession;
+		activeStreamingLoop = startStreamingLoop(
+			sdkSession,
+			sessionId,
+			sender,
+			persister,
+		)
+			.then(() => syncSdkSessionId(sessionId, sdkSession))
+			.finally(() => {
+				activeStreamingLoop = null;
+			});
 		return true;
 	}
 
