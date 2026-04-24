@@ -59,6 +59,11 @@ export const Timing = {
 	SETTLE_LOCAL: 1_000,
 	SETTLE_NETWORK: 8_000,
 	POST_TAB: 500,
+	// Max wall time we wait for GitHub API results (network + render). The
+	// fetch itself is usually < 2s, but CI and WKWebView accessibility
+	// refresh can lag; 20s leaves margin without ballooning test runtime.
+	RESULTS_WAIT: 20_000,
+	RESULTS_POLL: 500,
 } as const;
 
 // Providers cycled by Tab, in the default `enabledOrder`. Tests use these
