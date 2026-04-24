@@ -1,9 +1,11 @@
 import type { ChildProcess } from "node:child_process";
-import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
 	activateWindow,
 	clearInput,
 	createDriver,
+	indexOfInSource,
+	pressEnter,
 	pressEscape,
 	saveScreenshot,
 	startAppiumServer,
@@ -11,6 +13,7 @@ import {
 	tabToProvider,
 	typeText,
 	wait,
+	waitForResults,
 } from "./helpers/appium";
 import { Providers, Screenshots, Timing } from "./helpers/constants";
 
@@ -72,6 +75,20 @@ describe("Ptolomeu Screenshots", () => {
 	});
 
 	it("Screenshot 1: Estado inicial — command palette vazia", async () => {
+		// Sanity: prove the palette actually rendered (not a blank window or
+		// stuck splash). The Apps provider is active after beforeEach, so its
+		// placeholder must be present in the accessibility tree.
+		const report = await waitForResults(
+			driver,
+			["Buscar aplicativos..."],
+			Timing.RESULTS_WAIT,
+			Timing.RESULTS_POLL,
+		);
+		expect(
+			report.missing,
+			`Palette placeholder missing after ${report.elapsedMs}ms. Snippet: ${report.source.slice(0, 1500)}`,
+		).toEqual([]);
+
 		const filePath = await saveScreenshot(driver, Screenshots.INITIAL);
 		console.log(`Salvo: ${filePath}`);
 	});
@@ -87,12 +104,39 @@ describe("Ptolomeu Screenshots", () => {
 		currentProviderIndex = githubIndex;
 
 		await typeText(driver, "bun");
-		// Don't press Enter — that opens the first result's URL in Safari,
-		// which in CI triggers network I/O and flakes the run.
-		await wait(Timing.SETTLE_NETWORK);
+		// GitHub has no auto-search (see App.tsx — only calc/apps/claude auto-run).
+		// The first Enter with an empty result set triggers handleSearch() and does
+		// NOT open any URL: App.tsx gates openUrl behind results[selectedIndex],
+		// which is undefined until the fetch resolves.
+		await pressEnter(driver);
+
+		// "bun" on `search/repositories?sort=best-match` is stable enough that
+		// oven-sh/bun (the runtime) and uptrace/bun (Go ORM) consistently
+		// appear in the top results. We assert both are present to prove the
+		// list actually rendered, and assert their relative order to catch
+		// regressions in the sort/ranking pipeline.
+		const expectedTopRepos = ["oven-sh/bun", "uptrace/bun"] as const;
+		const report = await waitForResults(
+			driver,
+			expectedTopRepos,
+			Timing.RESULTS_WAIT,
+			Timing.RESULTS_POLL,
+		);
+
+		expect(
+			report.missing,
+			`GitHub results missing after ${report.elapsedMs}ms. Page source snippet: ${report.source.slice(0, 2000)}`,
+		).toEqual([]);
+
+		const ovenIdx = indexOfInSource(report.source, "oven-sh/bun");
+		const uptraceIdx = indexOfInSource(report.source, "uptrace/bun");
+		expect(
+			ovenIdx,
+			"oven-sh/bun should render before uptrace/bun in the results list",
+		).toBeLessThan(uptraceIdx);
 
 		const filePath = await saveScreenshot(driver, Screenshots.GITHUB);
-		console.log(`Salvo: ${filePath}`);
+		console.log(`Salvo: ${filePath} (resultados em ${report.elapsedMs}ms)`);
 	});
 
 	it("Screenshot 3: Calculadora — expressão com resultado", async () => {
@@ -106,18 +150,47 @@ describe("Ptolomeu Screenshots", () => {
 		currentProviderIndex = calcIndex;
 
 		await typeText(driver, "245 * 3 + 17");
-		await wait(Timing.SETTLE_LOCAL);
+
+		// Calculator auto-runs (App.tsx debounces at 100ms) so no Enter needed.
+		// 245 * 3 + 17 = 752 — we assert the numeric result rendered by
+		// CalculatorResult ("= 752"), which proves the provider evaluated
+		// the expression end-to-end and the UI reflected the state change.
+		const report = await waitForResults(
+			driver,
+			["752"],
+			Timing.RESULTS_WAIT,
+			Timing.RESULTS_POLL,
+		);
+		expect(
+			report.missing,
+			`Calculator result "752" not rendered after ${report.elapsedMs}ms. Snippet: ${report.source.slice(0, 1500)}`,
+		).toEqual([]);
 
 		const filePath = await saveScreenshot(driver, Screenshots.CALCULATOR);
-		console.log(`Salvo: ${filePath}`);
+		console.log(`Salvo: ${filePath} (resultado em ${report.elapsedMs}ms)`);
 	});
 
 	it("Screenshot 4: Busca de apps — apps locais encontrados", async () => {
 		// beforeEach already left us on the Apps provider, no Tab needed.
 		await typeText(driver, "Safari");
-		await wait(Timing.SETTLE_LOCAL);
+
+		// Apps auto-runs on every keystroke (App.tsx debounce = 0). Safari.app
+		// is shipped with macOS so it's guaranteed to be in the cached list
+		// returned by listApps(). We assert both the app name and its install
+		// path to confirm we're looking at a real result row, not just any
+		// label that happens to contain "Safari".
+		const report = await waitForResults(
+			driver,
+			["Safari", "/Applications/Safari.app"],
+			Timing.RESULTS_WAIT,
+			Timing.RESULTS_POLL,
+		);
+		expect(
+			report.missing,
+			`Apps results missing after ${report.elapsedMs}ms. Snippet: ${report.source.slice(0, 1500)}`,
+		).toEqual([]);
 
 		const filePath = await saveScreenshot(driver, Screenshots.APPS);
-		console.log(`Salvo: ${filePath}`);
+		console.log(`Salvo: ${filePath} (resultados em ${report.elapsedMs}ms)`);
 	});
 });

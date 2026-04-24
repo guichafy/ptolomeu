@@ -249,3 +249,71 @@ export async function saveScreenshot(
 export function wait(ms: number): Promise<void> {
 	return new Promise((r) => setTimeout(r, ms));
 }
+
+/**
+ * Accessibility tree XML of the app. appium-mac2-driver serializes the
+ * XCUITest tree — for WKWebView content, list items render as descendants
+ * of `XCUIElementTypeButton` with titles/labels preserved as attributes.
+ * We match against the raw XML so helpers don't need to know the exact
+ * element taxonomy.
+ */
+export async function getPageSource(
+	driver: WebdriverIO.Browser,
+): Promise<string> {
+	return await driver.getPageSource();
+}
+
+export interface WaitForResultsReport {
+	found: string[];
+	missing: string[];
+	elapsedMs: number;
+	source: string;
+}
+
+/**
+ * Poll the accessibility tree until every expected substring is present,
+ * or the timeout expires. Returns what was actually found so callers can
+ * build precise assertions (order, counts, etc.) instead of just a boolean.
+ *
+ * Substrings are matched against the raw XML page source — good enough for
+ * repo full-names like "oven-sh/bun" that only appear inside result rows.
+ */
+export async function waitForResults(
+	driver: WebdriverIO.Browser,
+	expected: readonly string[],
+	timeoutMs: number,
+	pollMs = 500,
+): Promise<WaitForResultsReport> {
+	const start = Date.now();
+	let lastSource = "";
+	while (Date.now() - start < timeoutMs) {
+		lastSource = await getPageSource(driver);
+		const missing = expected.filter((s) => !lastSource.includes(s));
+		if (missing.length === 0) {
+			return {
+				found: [...expected],
+				missing: [],
+				elapsedMs: Date.now() - start,
+				source: lastSource,
+			};
+		}
+		await wait(pollMs);
+	}
+	const found = expected.filter((s) => lastSource.includes(s));
+	const missing = expected.filter((s) => !lastSource.includes(s));
+	return {
+		found,
+		missing,
+		elapsedMs: Date.now() - start,
+		source: lastSource,
+	};
+}
+
+/**
+ * Index of `needle` in the accessibility-tree XML, or -1 if absent.
+ * Callers use this to assert relative ordering between result rows
+ * without depending on a specific DOM/accessibility shape.
+ */
+export function indexOfInSource(source: string, needle: string): number {
+	return source.indexOf(needle);
+}
