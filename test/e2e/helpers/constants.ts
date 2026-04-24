@@ -26,10 +26,15 @@ export const ModifierFlag = {
 	COMMAND: 1 << 20,
 } as const;
 
-export const Key = {
-	TAB: "\uE004",
-	ENTER: "\uE007",
-	ESCAPE: "\uE00C",
+// macOS virtual key codes for special keys. appium-mac2-driver's `macos: keys`
+// extension types the Selenium Keys strings ( etc.) as Unicode
+// characters into the field instead of emitting the keystroke, so Tab/Enter/
+// Escape must go through `virtualKeyCode` to reach the app as real events.
+export const VKey = {
+	TAB: 48,
+	ENTER: 36,
+	ESCAPE: 53,
+	BACKSPACE: 51,
 } as const;
 
 export const Timing = {
@@ -39,6 +44,11 @@ export const Timing = {
 	SETTLE_NETWORK: 8_000,
 	POST_TAB: 500,
 } as const;
+
+// Providers cycled by Tab, in the default `enabledOrder`. Tests use these
+// indices to navigate deterministically between screenshots.
+export const Providers = ["apps", "github", "calc", "web", "claude"] as const;
+export type ProviderId = (typeof Providers)[number];
 
 export const Screenshots = {
 	INITIAL: "estado-inicial.png",
