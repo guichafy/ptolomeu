@@ -1,0 +1,14 @@
+# Lefthook config: runs lint + affected tests before every commit.
+# Install: `bun install` (runs `prepare` script automatically).
+# Skip once: `LEFTHOOK=0 git commit ...`
+# Docs: https://lefthook.dev/configuration/
+
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{ts,tsx,js,jsx,json}"
+      run: bunx biome check --no-errors-on-unmatched {staged_files}
+    test:
+      glob: "src/**/*.{ts,tsx}"
+      run: bun run test --changed --run

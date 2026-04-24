@@ -18,7 +18,9 @@ bun run build:canary       # Production build with canary environment
 ```
 
 ```bash
-bun run test               # Unit tests (Vitest)
+bun run test               # Unit + integration tests (Vitest, two projects: node + jsdom)
+bun run test:watch         # Vitest in watch mode
+bun run test:coverage      # Coverage via @vitest/coverage-v8 (thresholds enforced)
 bun run test:e2e           # E2E tests — Appium Mac2 (requires Xcode + mac2 driver)
 bun run screenshots        # Build + E2E screenshots to docs/screenshots/
 bun run lint               # Biome linting
