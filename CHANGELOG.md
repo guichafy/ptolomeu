@@ -1,3 +1,15 @@
+# [0.6.0](https://github.com/guichafy/ptolomeu/compare/v0.5.0...v0.6.0) (2026-04-24)
+
+
+### Features
+
+* **devtools:** integrate react-devtools standalone and upgrade to React 19 ([1ec89b0](https://github.com/guichafy/ptolomeu/commit/1ec89b0b0ccfcb97a6eeef0d43fde4844e796388))
+
+
+### Performance Improvements
+
+* **build:** split vendor chunks and lazy-load syntax highlighter ([a4e84cf](https://github.com/guichafy/ptolomeu/commit/a4e84cfba45e97cc0e70cc7c97b9d2923a640f9b))
+
 # [0.5.0](https://github.com/guichafy/ptolomeu/compare/v0.4.0...v0.5.0) (2026-04-15)
 
 
