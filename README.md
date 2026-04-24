@@ -149,11 +149,18 @@ bun run build:canary    # Production build
 **Test**
 
 ```bash
-bun run test            # Unit + integration tests (Vitest)
-bun run test:watch      # Vitest in watch mode
-bun run test:coverage   # Coverage report (HTML in ./coverage/)
-bun run test:e2e        # E2E tests (Appium Mac2; requires the mac2 driver)
+bun run test              # Unit + integration tests (Vitest)
+bun run test:watch        # Vitest in watch mode
+bun run test:coverage     # Coverage report (HTML in ./coverage/)
+bun run build:dev-bundle  # Build the dev .app bundle (needed for E2E)
+bun run test:e2e          # E2E tests (Appium Mac2; requires the dev bundle)
+bun run screenshots       # Build dev bundle + run E2E + regenerate docs/screenshots/
 ```
+
+The E2E suite drives a real macOS app via Appium Mac2 and writes PNG
+screenshots to `docs/screenshots/`. Both the CI `e2e` job and the `screenshots`
+npm script produce the dev bundle via `electrobun build --env=dev` before
+running.
 
 Vitest runs two projects side by side:
 
