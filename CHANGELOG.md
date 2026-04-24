@@ -1,3 +1,22 @@
+# [0.7.0](https://github.com/guichafy/ptolomeu/compare/v0.6.0...v0.7.0) (2026-04-24)
+
+
+### Features
+
+* **claude-agent:** add AI Elements chat UI behind useAiElements flag ([943cebb](https://github.com/guichafy/ptolomeu/commit/943cebb0506a3023b4c718770b0fa2b5e4e9ad5d))
+* **claude-agent:** add Artifact / CodeBlock / Sources AI Elements + use them in ToolBlock ([7dcc79b](https://github.com/guichafy/ptolomeu/commit/7dcc79b0cf7b46a55894be44587051bac235a765))
+* **claude-agent:** add PermissionGate for HITL tool approval ([2ed333e](https://github.com/guichafy/ptolomeu/commit/2ed333e912f6acb8eb3c0244c1bed601204eeed1))
+* **claude-agent:** add risk classifier, session whitelist, audit log ([7d7316b](https://github.com/guichafy/ptolomeu/commit/7d7316bb4d2415ebf8f2849db1f3de824236f947))
+* **claude-agent:** add RPC protocol and integration plan ([2c257aa](https://github.com/guichafy/ptolomeu/commit/2c257aa25aecf2a42d3a01c08b78a6199aeb6a3a))
+* **claude-agent:** Attachments primitive + image picker + plan mode banner ([b530963](https://github.com/guichafy/ptolomeu/commit/b5309634df304bc1e9b8df5b6ce547e90020f782))
+* **claude-agent:** extract pure event mapper SDKMessage → AgentEvent ([f8f01f7](https://github.com/guichafy/ptolomeu/commit/f8f01f7950bdd7e0c35067c2170c10a4e87caf27))
+* **claude-agent:** fix V2 chat rendering + add turn indicator ([483cda2](https://github.com/guichafy/ptolomeu/commit/483cda20a21af04225b6f7a29e0c3b6cd924a135))
+* **claude-agent:** render ConfirmationQueue and wire real approve/reject RPCs ([a5b4d64](https://github.com/guichafy/ptolomeu/commit/a5b4d6425974eb525e8e47d871a203416f4fe67c))
+* **claude-agent:** runtime MCP server registry + settings UI ([29ac33c](https://github.com/guichafy/ptolomeu/commit/29ac33c9a6a1501c795ec42b66e4ac85819a4948))
+* **claude-agent:** wire canUseTool into session-manager + approve/reject RPC ([95c1a2b](https://github.com/guichafy/ptolomeu/commit/95c1a2b35b8f061c596934cdf7165236ca634877))
+* **claude-agent:** wire typed agentEvent RPC channel and useAgentChat ([0f189ae](https://github.com/guichafy/ptolomeu/commit/0f189aefd1568e4b3ee98e75ae3bc429b1c092a0))
+* **settings:** expand settings dialog size and support width resize ([bb74e11](https://github.com/guichafy/ptolomeu/commit/bb74e1138f108a7ea04e6a2fa1fc213a8062f247))
+
 # [0.6.0](https://github.com/guichafy/ptolomeu/compare/v0.5.0...v0.6.0) (2026-04-24)
 
 
