@@ -7,10 +7,10 @@ import {
 	APPIUM_HOST,
 	APPIUM_PORT,
 	BUNDLE_ID,
+	Key,
 	ModifierFlag,
 	SCREENSHOTS_DIR,
 	Timing,
-	VKey,
 } from "./constants";
 
 export async function startAppiumServer(): Promise<ChildProcess> {
@@ -96,14 +96,12 @@ export async function typeText(
 	await driver.executeScript("macos: keys", [{ keys }]);
 }
 
-async function sendVirtualKey(
+async function sendKey(
 	driver: WebdriverIO.Browser,
-	virtualKeyCode: number,
+	key: string,
 	modifierFlags?: number,
 ): Promise<void> {
-	const keyObj: { virtualKeyCode: number; modifierFlags?: number } = {
-		virtualKeyCode,
-	};
+	const keyObj: { key: string; modifierFlags?: number } = { key };
 	if (modifierFlags !== undefined) {
 		keyObj.modifierFlags = modifierFlags;
 	}
@@ -111,15 +109,15 @@ async function sendVirtualKey(
 }
 
 export async function pressTab(driver: WebdriverIO.Browser): Promise<void> {
-	await sendVirtualKey(driver, VKey.TAB);
+	await sendKey(driver, Key.TAB);
 }
 
 export async function pressEnter(driver: WebdriverIO.Browser): Promise<void> {
-	await sendVirtualKey(driver, VKey.ENTER);
+	await sendKey(driver, Key.ENTER);
 }
 
 export async function pressEscape(driver: WebdriverIO.Browser): Promise<void> {
-	await sendVirtualKey(driver, VKey.ESCAPE);
+	await sendKey(driver, Key.ESCAPE);
 }
 
 /**
@@ -127,12 +125,8 @@ export async function pressEscape(driver: WebdriverIO.Browser): Promise<void> {
  * which provider tab is active.
  */
 export async function clearInput(driver: WebdriverIO.Browser): Promise<void> {
-	await driver.executeScript("macos: keys", [
-		{
-			keys: [{ key: "a", modifierFlags: ModifierFlag.COMMAND }],
-		},
-	]);
-	await sendVirtualKey(driver, VKey.BACKSPACE);
+	await sendKey(driver, "a", ModifierFlag.COMMAND);
+	await sendKey(driver, Key.BACKSPACE);
 }
 
 /**
