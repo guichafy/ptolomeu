@@ -149,9 +149,20 @@ bun run build:canary    # Production build
 **Test**
 
 ```bash
-bun run test            # Unit tests (Vitest)
-bun run test:e2e        # E2E tests (Appium Mac2)
+bun run test            # Unit + integration tests (Vitest)
+bun run test:watch      # Vitest in watch mode
+bun run test:coverage   # Coverage report (HTML in ./coverage/)
+bun run test:e2e        # E2E tests (Appium Mac2; requires the mac2 driver)
 ```
+
+Vitest runs two projects side by side:
+
+- `node` — backend modules (`src/bun/**`, `src/chatview/lib/**`, `src/chatview/hooks/**`)
+- `jsdom` — React UI (`src/mainview/**`, `src/chatview/components/**`, `src/lib/**`)
+
+**Git hooks (lefthook)**
+
+Lefthook installs automatically via `bun install` (runs `lefthook install` through the `prepare` script). Every commit runs Biome on the staged files and Vitest on the tests affected by the change. To skip temporarily: `LEFTHOOK=0 git commit …`.
 
 **Lint**
 
