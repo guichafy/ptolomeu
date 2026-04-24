@@ -32,12 +32,20 @@ describe("Ptolomeu Screenshots", () => {
 	let currentProviderIndex = 0;
 
 	beforeAll(async () => {
+		const t0 = Date.now();
+		console.log("[e2e] starting Appium server...");
 		appiumProcess = await startAppiumServer();
-		driver = await createDriver();
-		await wait(Timing.APP_STARTUP);
+		console.log(`[e2e] Appium ready in ${Date.now() - t0}ms`);
 
+		const t1 = Date.now();
+		console.log("[e2e] creating WDIO session (launches the app)...");
+		driver = await createDriver();
+		console.log(`[e2e] session ready in ${Date.now() - t1}ms`);
+
+		await wait(Timing.APP_STARTUP);
 		activateWindow();
 		await wait(Timing.SETTLE_LOCAL);
+		console.log(`[e2e] total beforeAll ${Date.now() - t0}ms`);
 	});
 
 	afterAll(async () => {
