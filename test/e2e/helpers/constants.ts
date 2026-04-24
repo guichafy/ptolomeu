@@ -26,10 +26,26 @@ export const ModifierFlag = {
 	COMMAND: 1 << 20,
 } as const;
 
-// macOS virtual key codes for special keys. appium-mac2-driver's `macos: keys`
-// extension types the Selenium Keys strings ( etc.) as Unicode
-// characters into the field instead of emitting the keystroke, so Tab/Enter/
-// Escape must go through `virtualKeyCode` to reach the app as real events.
+// ASCII control-character strings for special keys. appium-mac2-driver's
+// `macos: keys` extension requires the `key` field (string) on every entry
+// — it won't accept `virtualKeyCode` alone. The driver maps these control
+// chars onto XCUIKeyboardKey constants (see Apple's XCUITest docs):
+//   "\t"     → tab
+//   "\r"     → return
+//   "" → escape
+//   "" → backspace (XCUIKeyboardKey.delete)
+// Selenium's Keys strings ( etc.) are passed through as Unicode
+// characters and don't map to real keystrokes, so we avoid them.
+export const Key = {
+	TAB: "\t",
+	ENTER: "\r",
+	ESCAPE: "",
+	BACKSPACE: "",
+} as const;
+
+// macOS virtual key codes. Some Mac2 driver builds accept these alongside
+// `key` as an extra hint; we expose them for future use but normally only
+// set `key`.
 export const VKey = {
 	TAB: 48,
 	ENTER: 36,
