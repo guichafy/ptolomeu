@@ -63,7 +63,7 @@ describe("buildCreateSessionOptions", () => {
 		expect(opts.cwd).toBe(TEST_CWD);
 	});
 
-	it("includes the default allowedTools whitelist", () => {
+	it("auto-allows only read-only tools so writes/exec go through the jail", () => {
 		const opts = buildCreateSessionOptions({
 			model: "m",
 			permissionMode: "dontAsk",
@@ -72,15 +72,22 @@ describe("buildCreateSessionOptions", () => {
 			mcpServers: {},
 			cwd: TEST_CWD,
 		});
-		expect(opts.allowedTools).toEqual([
-			"Read",
-			"Write",
-			"Edit",
-			"Bash",
-			"Glob",
-			"Grep",
-			"LS",
-		]);
+		expect(opts.allowedTools).toEqual(["Read", "Glob", "Grep", "LS"]);
+	});
+
+	it("never auto-allows mutating/executing tools (regression: SDK bypasses canUseTool for allowedTools)", () => {
+		const opts = buildCreateSessionOptions({
+			model: "m",
+			permissionMode: "dontAsk",
+			claudePath: "/c",
+			canUseTool: noopCanUseTool,
+			mcpServers: {},
+			cwd: TEST_CWD,
+		});
+		const forbidden = ["Write", "Edit", "MultiEdit", "Bash", "NotebookEdit"];
+		for (const tool of forbidden) {
+			expect(opts.allowedTools, tool).not.toContain(tool);
+		}
 	});
 
 	it("omits mcpServers when the record is empty", () => {

@@ -18,7 +18,12 @@ export type SessionOptionsInternal = SDKSessionOptions & {
 	cwd?: string;
 };
 
-const ALLOWED_TOOLS = ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "LS"];
+// Tools listed here bypass `canUseTool` entirely (SDK auto-allows them),
+// which means the WorkspaceJail never runs for them. Keep this list
+// strictly read-only — any tool that can create, modify, or execute must
+// fall through to canUseTool so the jail can enforce workspace containment
+// and the HITL permission gate can prompt when needed.
+const ALLOWED_TOOLS = ["Read", "Glob", "Grep", "LS"];
 
 export interface BuildCreateArgs {
 	model: string;
