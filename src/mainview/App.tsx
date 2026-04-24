@@ -22,7 +22,9 @@ import { SettingsDialog } from "./settings/settings-dialog";
 
 const COLLAPSED_HEIGHT = 120;
 const EXPANDED_HEIGHT = 440;
-const SETTINGS_HEIGHT = 480;
+const SETTINGS_HEIGHT = 720;
+const SETTINGS_WIDTH = 820;
+const DEFAULT_WIDTH = 630;
 
 function PaletteContent() {
 	const { activeProvider, cycleNext, cyclePrev } = useProvider();
@@ -227,7 +229,8 @@ function PaletteContent() {
 			: isComboboxOpen || hasContent
 				? EXPANDED_HEIGHT
 				: COLLAPSED_HEIGHT;
-		rpc.request.resizeWindow({ height }).catch(() => {});
+		const width = isSettingsOpen ? SETTINGS_WIDTH : DEFAULT_WIDTH;
+		rpc.request.resizeWindow({ height, width }).catch(() => {});
 	}, [hasContent, isSettingsOpen, isComboboxOpen]);
 
 	function handleKeyDown(e: React.KeyboardEvent) {

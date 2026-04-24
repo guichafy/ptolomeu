@@ -15,7 +15,8 @@ import { TeamReposPreview } from "../components/team-repos-preview";
 import type { CustomFilter, GitHubSearchType } from "../providers/github/types";
 import { rpc } from "../providers/rpc";
 
-const SETTINGS_HEIGHT = 480;
+const SETTINGS_HEIGHT = 720;
+const SETTINGS_WIDTH = 820;
 const FILTER_DIALOG_HEIGHT_TEAM = 740;
 const FILTER_DIALOG_HEIGHT_SEARCH = 780;
 
@@ -109,9 +110,11 @@ export function CustomFilterDialog({ open, initial, onClose, onSave }: Props) {
 			kind === "search"
 				? FILTER_DIALOG_HEIGHT_SEARCH
 				: FILTER_DIALOG_HEIGHT_TEAM;
-		rpc.request.resizeWindow({ height }).catch(() => {});
+		rpc.request.resizeWindow({ height, width: SETTINGS_WIDTH }).catch(() => {});
 		return () => {
-			rpc.request.resizeWindow({ height: SETTINGS_HEIGHT }).catch(() => {});
+			rpc.request
+				.resizeWindow({ height: SETTINGS_HEIGHT, width: SETTINGS_WIDTH })
+				.catch(() => {});
 		};
 	}, [open, kind]);
 
