@@ -37,6 +37,47 @@ jobs:
           path: coverage/
           retention-days: 14
 
-  # NOTE: E2E (Appium Mac2) is run manually for now — `bun run test:e2e`.
-  # Adding it to CI requires validating that the macos-latest runner has the
-  # right Xcode/Accessibility setup; do that in a follow-up before re-enabling.
+  e2e:
+    name: E2E (Appium Mac2)
+    runs-on: macos-latest
+    needs: build-and-test
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # macos-latest ships with Xcode (Swift compiler + XCUITest). The Mac2
+      # Appium driver needs `swiftc` for our window-bounds/screenshot helper
+      # and for XCUITest to talk to the app.
+      - name: Verify Xcode tools
+        run: |
+          xcode-select -p
+          swiftc --version
+          swift --version
+
+      - name: Build dev .app bundle
+        run: bun run build:dev-bundle
+
+      - name: Install Appium Mac2 driver
+        run: bun run appium:install-driver
+
+      # Appium Mac2 needs Accessibility permission to deliver keystrokes.
+      # On GitHub-hosted macOS runners the runner process runs as the user and
+      # usually has this granted; if this step fails, investigate TCC (see
+      # `sudo sqlite3 /Library/Application Support/com.apple.TCC/TCC.db …`).
+      - name: Run E2E tests
+        run: bun run test:e2e
+        env:
+          CI: "true"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: docs/screenshots/
+          retention-days: 14
+          if-no-files-found: warn

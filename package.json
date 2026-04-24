@@ -23,7 +23,8 @@
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
 		"test:e2e": "vitest run --config vitest.config.e2e.ts",
-		"screenshots": "bun run build:native && bun run build:vite && vitest run --config vitest.config.e2e.ts",
+		"build:dev-bundle": "bun run build:native && bun run build:vite && bunx electrobun build --env=dev",
+		"screenshots": "bun run build:dev-bundle && vitest run --config vitest.config.e2e.ts",
 		"appium:install-driver": "appium driver install mac2",
 		"prepare": "lefthook install || true"
 	},
