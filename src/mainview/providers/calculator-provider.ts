@@ -97,6 +97,9 @@ export const calculatorProvider: SearchProvider = {
 
 		try {
 			const result = evaluateMath(query);
+			if (!Number.isFinite(result)) {
+				throw new Error("Resultado não é finito");
+			}
 			const formatted = formatResult(result);
 			return [
 				{

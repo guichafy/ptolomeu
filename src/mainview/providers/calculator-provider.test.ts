@@ -51,10 +51,14 @@ describe("calculatorProvider", () => {
 		expect(res.title).toBe("1");
 	});
 
-	it("division by zero yields Infinity (not error)", async () => {
+	it("division by zero is reported as an invalid expression", async () => {
 		const [res] = await calculatorProvider.search("1/0");
-		// JS 1/0 === Infinity; formatResult returns String(Infinity)
-		expect(res.title).toBe("Infinity");
+		expect(res.id).toBe("calc-error");
+	});
+
+	it("0/0 (NaN) is reported as an invalid expression", async () => {
+		const [res] = await calculatorProvider.search("0/0");
+		expect(res.id).toBe("calc-error");
 	});
 
 	it("returns error result for invalid characters", async () => {

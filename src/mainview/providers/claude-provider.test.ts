@@ -94,14 +94,20 @@ describe("claudeProvider", () => {
 		await expect(result.onSelect()).resolves.toBeUndefined();
 	});
 
-	it("returns empty when signal aborts before listSessions resolves", async () => {
+	it("returns empty when signal aborts while listSessions is in-flight", async () => {
+		let resolveList: (v: ReturnType<typeof makeSession>[]) => void = () => {};
+		claudeListSessions.mockReturnValue(
+			new Promise((resolve) => {
+				resolveList = resolve;
+			}),
+		);
 		const controller = new AbortController();
-		claudeListSessions.mockImplementation(async () => {
-			controller.abort();
-			return [makeSession()];
-		});
 
-		const results = await claudeProvider.search("", controller.signal);
-		expect(results).toEqual([]);
+		const pending = claudeProvider.search("", controller.signal);
+		// Caller aborts while the RPC is still waiting on the network.
+		controller.abort();
+		resolveList([makeSession()]);
+
+		expect(await pending).toEqual([]);
 	});
 });

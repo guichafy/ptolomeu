@@ -11,4 +11,4 @@ pre-commit:
       run: bunx biome check --no-errors-on-unmatched {staged_files}
     test:
       glob: "src/**/*.{ts,tsx}"
-      run: bun run test --changed --run
+      run: bun run test --changed
