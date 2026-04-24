@@ -14,6 +14,10 @@ import { loadSettings } from "../settings";
 import { mcpLoader } from "./mcp-loader";
 import { PermissionGate } from "./permission-gate";
 import { ToolDecisionStore } from "./persistence/tool-decisions";
+import {
+	buildCreateSessionOptions,
+	buildResumeSessionOptions,
+} from "./session-options";
 import type {
 	MessagePersister,
 	PersistBlock,
@@ -447,14 +451,15 @@ export async function createSession(
 	}
 
 	// Create the SDK session
-	const sdkSession = unstable_v2_createSession({
-		model,
-		permissionMode,
-		pathToClaudeCodeExecutable: claudePath,
-		allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "LS"],
-		canUseTool: buildCanUseTool(id),
-		...(mcpNames.length > 0 ? { mcpServers } : {}),
-	});
+	const sdkSession = unstable_v2_createSession(
+		buildCreateSessionOptions({
+			model,
+			permissionMode,
+			claudePath,
+			canUseTool: buildCanUseTool(id),
+			mcpServers,
+		}),
+	);
 	verbose(`[claude:session] SDK session created: id=${id}`);
 	// Send the initial prompt — the SDK session needs a user message to begin
 	await sdkSession.send(prompt);
@@ -555,12 +560,15 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 	try {
 		const claudePath = await findClaudeCli();
 		const mcpServers = await mcpLoader.resolve();
-		const sdkSession = unstable_v2_resumeSession(meta.sdkSessionId, {
-			model,
-			pathToClaudeCodeExecutable: claudePath,
-			canUseTool: buildCanUseTool(sessionId),
-			...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
-		});
+		const sdkSession = unstable_v2_resumeSession(
+			meta.sdkSessionId,
+			buildResumeSessionOptions({
+				model,
+				claudePath,
+				canUseTool: buildCanUseTool(sessionId),
+				mcpServers,
+			}),
+		);
 
 		activeSession = sdkSession;
 		activeSessionId = sessionId;
@@ -640,12 +648,15 @@ export async function sendMessage(message: string): Promise<void> {
 	const claudePath = await findClaudeCli();
 	const mcpServers = await mcpLoader.resolve();
 
-	const sdkSession = unstable_v2_resumeSession(meta.sdkSessionId, {
-		model,
-		pathToClaudeCodeExecutable: claudePath,
-		canUseTool: buildCanUseTool(internalId),
-		...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
-	});
+	const sdkSession = unstable_v2_resumeSession(
+		meta.sdkSessionId,
+		buildResumeSessionOptions({
+			model,
+			claudePath,
+			canUseTool: buildCanUseTool(internalId),
+			mcpServers,
+		}),
+	);
 	verbose(
 		`[claude:session] sendMessage: new SDK session resumed from sdkSessionId=${meta.sdkSessionId}`,
 	);

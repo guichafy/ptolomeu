@@ -1,5 +1,6 @@
 import { type ElectrobunRPCSchema, Electroview } from "electrobun/view";
 import type { AgentEvent, ApproveBehavior } from "@/shared/agent-protocol";
+import { AgentEventBuffer } from "./lib/agent-event-buffer";
 
 const VERBOSE = import.meta.env.VITE_CLAUDE_LOG_VERBOSE === "1";
 const verbose = (...args: unknown[]) => {
@@ -308,18 +309,19 @@ let streamErrorHandler:
 	| null = null;
 
 // Typed agent-event channel. Subscribers see every event the backend emits for
-// any session; filter by sessionId downstream.
+// any session; filter by sessionId downstream. Events received before the first
+// subscriber are buffered (see agent-event-buffer.ts) because the streaming
+// loop starts before the chat window's React tree mounts — without the buffer
+// the early text-start/text-delta events would be dropped and the assistant
+// bubble would render empty.
 type AgentEventListener = (args: {
 	sessionId: string;
 	event: AgentEvent;
 }) => void;
-const agentEventListeners = new Set<AgentEventListener>();
+const agentEventBuffer = new AgentEventBuffer();
 
 export function onAgentEvent(listener: AgentEventListener): () => void {
-	agentEventListeners.add(listener);
-	return () => {
-		agentEventListeners.delete(listener);
-	};
+	return agentEventBuffer.subscribe(listener);
 }
 
 export function setStreamHandlers(handlers: {
@@ -383,7 +385,7 @@ const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 				verbose(
 					`[chat:rpc] agentEvent: sessionId=${args.sessionId} type=${args.event.type}`,
 				);
-				for (const listener of agentEventListeners) listener(args);
+				agentEventBuffer.push(args);
 			},
 		},
 	},

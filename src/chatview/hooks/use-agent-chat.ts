@@ -1,12 +1,17 @@
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { ApproveBehavior } from "@/shared/agent-protocol";
 import { onAgentEvent, rpc } from "../rpc";
 import {
+	type AgentMessage,
 	type AgentState,
 	appendUserMessage,
+	hasPendingTurn,
+	hydrateMessages,
 	initialAgentState,
+	markTurnStart,
 	reduceAgentState,
 	resolvePermission,
+	storedToAgentMessage,
 } from "./agent-state";
 
 type Action =
@@ -17,6 +22,8 @@ type Action =
 	  }
 	| { type: "optimistic-user"; id: string; text: string }
 	| { type: "resolve-permission"; permissionId: string }
+	| { type: "hydrate"; messages: AgentMessage[] }
+	| { type: "mark-turn-start" }
 	| { type: "reset" };
 
 function reducer(state: AgentState, action: Action): AgentState {
@@ -24,9 +31,24 @@ function reducer(state: AgentState, action: Action): AgentState {
 		case "event":
 			return reduceAgentState(state, action.event);
 		case "optimistic-user":
-			return appendUserMessage(state, action.id, action.text);
+			// Mark the turn as in-flight so the TurnIndicator flips to
+			// "waiting" immediately, without waiting for the first
+			// session-state-change event from the backend.
+			return markTurnStart(appendUserMessage(state, action.id, action.text));
 		case "resolve-permission":
 			return resolvePermission(state, action.permissionId);
+		case "hydrate": {
+			const hydrated = hydrateMessages(state, action.messages);
+			// For sessions opened via the palette (createSession flow), the
+			// persisted transcript may already contain a user prompt with no
+			// assistant reply — the backend is streaming but hasn't emitted a
+			// session-state-change yet. Infer the in-flight state from disk.
+			return hasPendingTurn(action.messages)
+				? markTurnStart(hydrated)
+				: hydrated;
+		}
+		case "mark-turn-start":
+			return markTurnStart(state);
 		case "reset":
 			return initialAgentState();
 	}
@@ -53,15 +75,48 @@ export interface UseAgentChatResult {
  */
 export function useAgentChat(sessionId: string | null): UseAgentChatResult {
 	const [state, dispatch] = useReducer(reducer, undefined, initialAgentState);
+	// Guards hydrate responses against out-of-order resolution. Incremented on
+	// every hydrate request; the `.then()` drops stale reads. Without this,
+	// a late reply to an earlier sessionId could overwrite a newly-hydrated
+	// state (e.g. after a rapid session switch).
+	const hydrateGenRef = useRef(0);
+
+	const hydrate = useCallback(async (sid: string) => {
+		const gen = ++hydrateGenRef.current;
+		try {
+			const stored = await rpc.request.claudeGetSessionMessages({
+				sessionId: sid,
+			});
+			if (gen !== hydrateGenRef.current) return;
+			const messages = stored.map((m, i) => storedToAgentMessage(m, i));
+			dispatch({ type: "hydrate", messages });
+		} catch (err) {
+			console.error("[agent-chat] hydrate failed:", err);
+		}
+	}, []);
+
+	// Initial hydration when the session id becomes known. Also re-runs if the
+	// user switches sessions within the same chat window.
+	useEffect(() => {
+		if (!sessionId) return;
+		hydrate(sessionId);
+	}, [sessionId, hydrate]);
 
 	useEffect(() => {
 		if (!sessionId) return;
 		const unsubscribe = onAgentEvent((args) => {
 			if (args.sessionId !== sessionId) return;
 			dispatch({ type: "event", sessionId: args.sessionId, event: args.event });
+			// After a turn finishes the backend has already appended the complete
+			// assistant message to disk (see streaming.ts — persist BEFORE sendEnd).
+			// Reload from disk so any deltas missed during the window-creation race
+			// (or before `useAgentChat` subscribed) are recovered.
+			if (args.event.type === "finish") {
+				hydrate(sessionId);
+			}
 		});
 		return unsubscribe;
-	}, [sessionId]);
+	}, [sessionId, hydrate]);
 
 	const sendMessage = useCallback(async (text: string) => {
 		if (!text.trim()) return;
