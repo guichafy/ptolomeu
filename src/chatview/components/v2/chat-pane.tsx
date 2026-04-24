@@ -24,15 +24,17 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { Button } from "@/components/ui/button";
-import type {
-	AgentMessage as AgentMessageType,
-	SessionState,
+import {
+	type AgentMessage as AgentMessageType,
+	computeTurnStatus,
+	type SessionState,
 } from "../../hooks/agent-state";
 import { useAgentChat } from "../../hooks/use-agent-chat";
 import { onOpenSession, rpc } from "../../rpc";
 import { ChatHeader } from "../chat-header";
 import { ConfirmationQueue } from "./confirmation-queue";
 import { MessagePart as MessagePartRenderer } from "./message-parts";
+import { TurnIndicator } from "./turn-indicator";
 
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -150,6 +152,7 @@ export function ChatPaneV2() {
 		: state.messages;
 	const status = state.sessionState === "running" ? "streaming" : "ready";
 	const hasSubmittableContent = Boolean(draft.trim()) || attachments.length > 0;
+	const turnStatus = computeTurnStatus(state);
 
 	return (
 		<div className="flex h-screen flex-col bg-background text-foreground">
@@ -168,6 +171,10 @@ export function ChatPaneV2() {
 					{messages.map((message) => (
 						<AgentMessageView key={message.id} message={message} />
 					))}
+					<TurnIndicator
+						status={turnStatus.status}
+						toolName={turnStatus.toolName}
+					/>
 				</ConversationContent>
 				<ConversationScrollButton />
 			</Conversation>

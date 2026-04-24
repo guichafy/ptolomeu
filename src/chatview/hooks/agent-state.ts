@@ -5,6 +5,7 @@
  * simple event fixtures.
  */
 
+import type { StoredBlock, StoredMessage } from "@/chatview/rpc";
 import type { AgentEvent, TokenUsage } from "@/shared/agent-protocol";
 
 // ---------------------------------------------------------------------------
@@ -338,6 +339,195 @@ export function resolvePermission(
 			remaining.length === 0 && state.sessionState === "requires_action"
 				? "running"
 				: state.sessionState,
+	};
+}
+
+export type TurnStatus = "idle" | "waiting" | "receiving" | "tool_running";
+
+export interface TurnStatusDetail {
+	status: TurnStatus;
+	/** Name of the first running tool, when status is "tool_running". */
+	toolName?: string;
+}
+
+/**
+ * Derive a UI-friendly turn status from the agent state, plus the name of
+ * the currently-running tool (when applicable) so the indicator can label
+ * the "tool_running" phase.
+ *
+ * - `idle`: no turn is in progress, or the session is waiting on a HITL
+ *   permission / is in error. The conversation does not need a live indicator.
+ * - `waiting`: the backend is running but nothing visible has arrived yet
+ *   (between sendMessage and the first delta, or between a completed tool
+ *   and the assistant's follow-up text).
+ * - `receiving`: a text or reasoning part is currently streaming.
+ * - `tool_running`: a tool is executing with no concurrent text streaming.
+ *
+ * Precedence is `receiving` > `tool_running` > `waiting`.
+ */
+export function computeTurnStatus(state: AgentState): TurnStatusDetail {
+	const status = resolveStatus(state);
+	const toolName =
+		status === "tool_running" ? findRunningToolName(state) : undefined;
+	return { status, toolName };
+}
+
+function resolveStatus(state: AgentState): TurnStatus {
+	if (state.sessionState !== "running") return "idle";
+	const parts = state.currentMessage?.parts ?? [];
+	if (parts.some(isStreamingTextOrReasoning)) return "receiving";
+	if (parts.some(isRunningTool)) return "tool_running";
+	return "waiting";
+}
+
+function isStreamingTextOrReasoning(part: AgentPart): boolean {
+	return (
+		(part.kind === "text" && part.streaming) ||
+		(part.kind === "reasoning" && part.streaming)
+	);
+}
+
+function isRunningTool(part: AgentPart): boolean {
+	return part.kind === "tool" && part.status === "running";
+}
+
+function findRunningToolName(state: AgentState): string | undefined {
+	const part = state.currentMessage?.parts.find(isRunningTool);
+	return part?.kind === "tool" ? part.toolName : undefined;
+}
+
+/**
+ * Replace state.messages with the provided hydrated list. Clears
+ * `currentMessage` because a just-completed turn has already been persisted
+ * and re-materialized into the list — leaving an in-flight draft would cause
+ * a duplicate bubble.
+ */
+export function hydrateMessages(
+	state: AgentState,
+	messages: AgentMessage[],
+): AgentState {
+	return {
+		...state,
+		messages,
+		currentMessage: null,
+	};
+}
+
+/**
+ * Convert a persisted V2 message into an `AgentMessage`. Used to hydrate the
+ * V2 chat when the window first opens (the initial prompt from the palette
+ * has no agent event, and a race between `createSession` starting the stream
+ * loop and the webview mounting can drop early deltas).
+ */
+export function storedToAgentMessage(
+	stored: StoredMessage,
+	index: number,
+): AgentMessage {
+	const id = `stored-${index}`;
+	const parts: AgentPart[] = [];
+	const toolPartsById = new Map<string, AgentToolPart>();
+
+	for (const block of stored.blocks) {
+		appendStoredBlock(block, id, parts, toolPartsById);
+	}
+
+	return {
+		id,
+		role: stored.role,
+		parts,
+		createdAt: Date.parse(stored.timestamp) || 0,
+	};
+}
+
+function appendStoredBlock(
+	block: StoredBlock,
+	messageId: string,
+	parts: AgentPart[],
+	toolPartsById: Map<string, AgentToolPart>,
+): void {
+	switch (block.type) {
+		case "text":
+			parts.push({
+				kind: "text",
+				messageId,
+				text: block.text,
+				streaming: false,
+				parentToolCallId: null,
+			});
+			return;
+		case "thinking":
+			parts.push({
+				kind: "reasoning",
+				messageId,
+				text: block.thinking,
+				streaming: false,
+				durationMs: block.durationMs,
+				parentToolCallId: null,
+			});
+			return;
+		case "tool_use": {
+			const part: AgentToolPart = {
+				kind: "tool",
+				toolCallId: block.id,
+				toolName: block.name,
+				parentToolCallId: null,
+				status: mapStoredToolStatus(block.status),
+				argsStreaming: "",
+				args: block.input,
+				elapsedSeconds: block.elapsedSeconds,
+			};
+			parts.push(part);
+			toolPartsById.set(block.id, part);
+			return;
+		}
+		case "tool_result": {
+			const tool = toolPartsById.get(block.toolUseId);
+			if (!tool) return;
+			if (block.isError) {
+				tool.status = "error";
+				tool.error = { message: block.content };
+			} else {
+				tool.status = "completed";
+				tool.result = block.content;
+			}
+			return;
+		}
+	}
+}
+
+function mapStoredToolStatus(
+	status: "running" | "done" | "error",
+): AgentToolPart["status"] {
+	return status === "done" ? "completed" : status;
+}
+
+/**
+ * True when the last message on disk is from the user — i.e. the backend
+ * still owes a response. Used by hydration to detect an in-flight turn when
+ * the chat window opens for a session just created by the palette (the SDK
+ * may not emit `session_state_changed("running")` promptly, so we infer the
+ * in-flight state from the persisted transcript).
+ */
+export function hasPendingTurn(messages: AgentMessage[]): boolean {
+	const last = messages[messages.length - 1];
+	return last?.role === "user";
+}
+
+/**
+ * Flip sessionState to "running" immediately after the user submits, so the
+ * turn indicator appears during the gap between `claudeSendMessage` and the
+ * first SDK event. The backend's `session-state-change` events keep the
+ * state accurate from that point on.
+ *
+ * Leaves `requires_action` untouched — a pending HITL permission must stay
+ * blocking until the user decides.
+ */
+export function markTurnStart(state: AgentState): AgentState {
+	if (state.sessionState === "requires_action") return state;
+	return {
+		...state,
+		sessionState: "running",
+		lastError: null,
 	};
 }
 
