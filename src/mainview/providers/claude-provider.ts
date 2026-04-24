@@ -19,7 +19,7 @@ export function sessionToResult(session: SessionMeta): SearchResult {
 	return {
 		id: session.id,
 		title: session.title,
-		subtitle: `${session.cwd ?? "Sem projeto"} • ${timeAgo(session.updatedAt)}`,
+		subtitle: `${session.projectId} • ${timeAgo(session.updatedAt)}`,
 		icon: createElement(MessageSquare, { size: 16 }),
 		onSelect: () => rpc.request.claudeOpenChat({ sessionId: session.id }),
 	};

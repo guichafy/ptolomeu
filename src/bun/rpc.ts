@@ -103,7 +103,10 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			};
 			claudeListSessions: { params: void; response: SessionMeta[] };
 			claudeCreateSession: {
-				params: { prompt: string; cwd?: string };
+				// No cwd: the backend auto-provisions a project directory per
+				// conversation. Pass projectId to attach a new session to an
+				// existing project (future multi-session-per-project UI).
+				params: { prompt: string; projectId?: string };
 				response: { sessionId: string };
 			};
 			claudeResumeSession: {
@@ -561,8 +564,8 @@ export const requestHandlers = {
 		return true;
 	},
 	claudeListSessions: async () => claudeListSessions(),
-	claudeCreateSession: async ({ prompt, cwd }) => {
-		const sessionId = await claudeCreateSession(prompt, cwd);
+	claudeCreateSession: async ({ prompt, projectId }) => {
+		const sessionId = await claudeCreateSession(prompt, { projectId });
 		console.log(
 			`[claude:rpc] claudeCreateSession: auto-opening chat for sessionId=${sessionId}`,
 		);
