@@ -37,22 +37,6 @@ jobs:
           path: coverage/
           retention-days: 14
 
-  e2e:
-    name: E2E
-    runs-on: macos-latest
-    needs: build-and-test
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: bun run appium:install-driver
-      - run: bun run build:native
-      - run: bun run build:vite
-      - run: bun run test:e2e
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-screenshots
-          path: docs/screenshots/
-          retention-days: 14
+  # NOTE: E2E (Appium Mac2) is run manually for now — `bun run test:e2e`.
+  # Adding it to CI requires validating that the macos-latest runner has the
+  # right Xcode/Accessibility setup; do that in a follow-up before re-enabling.

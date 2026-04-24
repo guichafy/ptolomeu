@@ -340,6 +340,304 @@ async function getAppIconBase64(appPath: string): Promise<string | null> {
 	}
 }
 
+// Late-bound sender for pushing `claudeSessionsUpdate` to the main window.
+// `requestHandlers` is defined below and can't reference `mainRpc` directly
+// (that would be a TDZ violation — `mainRpc` is created from these handlers).
+// Tests replace this to observe pushes without instantiating the Electrobun
+// transport.
+let sessionsUpdatePusher: ((args: { sessions: SessionMeta[] }) => void) | null =
+	null;
+
+export function setSessionsUpdatePusher(
+	fn: ((args: { sessions: SessionMeta[] }) => void) | null,
+) {
+	sessionsUpdatePusher = fn;
+}
+
+// Request handlers extracted as a top-level const so tests can exercise each
+// one directly with mocked module deps, without having to spin up the
+// Electrobun RPC transport. The object shape is validated against
+// `PtolomeuRPCSchema` when it's passed to `defineElectrobunRPC` below.
+export const requestHandlers = {
+	listApps: async () => {
+		return scanApps();
+	},
+	openApp: async ({ path }) => {
+		try {
+			Bun.spawn(["open", "-a", path]);
+			return true;
+		} catch {
+			return false;
+		}
+	},
+	openUrl: async ({ url }) => {
+		try {
+			Bun.spawn(["open", url]);
+			return true;
+		} catch {
+			return false;
+		}
+	},
+	getAppIcon: async ({ path }) => {
+		const icon = await getAppIconBase64(path);
+		return { icon };
+	},
+	resizeWindow: async ({ height, width }) => {
+		if (mainWindowRef) {
+			const frame = mainWindowRef.getFrame();
+			const nextWidth = width ?? 630;
+			if (frame.height === height && frame.width === nextWidth) return true;
+			const newY = frame.y + (frame.height - height) / 2;
+			const newX = frame.x + (frame.width - nextWidth) / 2;
+			mainWindowRef.setFrame(newX, newY, nextWidth, height);
+			return true;
+		}
+		return false;
+	},
+	loadSettings: async () => {
+		return loadSettingsFromDisk();
+	},
+	saveSettings: async (next) => {
+		return saveSettingsToDisk(next);
+	},
+	getProxyStatus: async () => {
+		return getProxyStatusFromModule();
+	},
+	reloadProxyFromSystem: async () => {
+		return reloadProxyFromSystemModule();
+	},
+	saveManualProxy: async (args) => {
+		const host = args.host.trim();
+		if (!host || /\s|\//.test(host)) {
+			return { ok: false, error: "Host inválido" };
+		}
+		if (!Number.isInteger(args.port) || args.port < 1 || args.port > 65535) {
+			return { ok: false, error: "Porta deve estar entre 1 e 65535" };
+		}
+		if (args.protocol !== "http" && args.protocol !== "https") {
+			return { ok: false, error: "Protocolo inválido" };
+		}
+		const username = args.username?.trim() || undefined;
+		const ref = {
+			service: PROXY_KEYCHAIN_SERVICE,
+			account: manualAccountId({
+				protocol: args.protocol,
+				host,
+				port: args.port,
+			} as ManualProxySettings),
+		};
+		// Se senha foi fornecida, grava. Omitir mantém senha anterior.
+		let hasPassword: boolean;
+		if (args.password !== undefined) {
+			if (args.password.length === 0) {
+				// Senha explicitamente vazia → apagar entrada anterior.
+				await deletePassword(ref);
+				hasPassword = false;
+			} else {
+				const r = await setPassword(ref, args.password);
+				if (!r.ok) {
+					return { ok: false, error: r.error ?? "Falha no Keychain" };
+				}
+				hasPassword = true;
+			}
+		} else {
+			const current = await loadSettingsFromDisk();
+			hasPassword = current.proxy.manual?.hasPassword ?? false;
+		}
+		const manual: ManualProxySettings = {
+			protocol: args.protocol,
+			host,
+			port: args.port,
+			username,
+			hasPassword,
+			noProxy: args.noProxy.filter((x) => typeof x === "string"),
+		};
+		const current = await loadSettingsFromDisk();
+		const saved = await saveSettingsToDisk({
+			...current,
+			proxy: { mode: "manual", manual },
+		});
+		if (!saved) {
+			return { ok: false, error: "Falha ao gravar configurações" };
+		}
+		await initProxy("manual", manual);
+		return { ok: true };
+	},
+	clearManualProxy: async () => {
+		const current = await loadSettingsFromDisk();
+		const m = current.proxy.manual;
+		if (m) {
+			await deletePassword({
+				service: PROXY_KEYCHAIN_SERVICE,
+				account: manualAccountId(m),
+			});
+		}
+		await saveSettingsToDisk({
+			...current,
+			proxy: { mode: "auto" },
+		});
+		await initProxy("auto");
+		return true;
+	},
+	testProxyConnection: async ({ testUrl }) => {
+		const url = testUrl ?? "https://api.github.com";
+		const started = Date.now();
+		try {
+			const res = await fetchWithProxy(url, {
+				signal: AbortSignal.timeout(10_000),
+				headers: { "User-Agent": "Ptolomeu-ProxyTest" },
+			});
+			return {
+				ok: res.ok,
+				status: res.status,
+				latencyMs: Date.now() - started,
+			};
+		} catch (err) {
+			return {
+				ok: false,
+				error: err instanceof Error ? err.message : String(err),
+				latencyMs: Date.now() - started,
+			};
+		}
+	},
+	githubGetTokenStatus: async () => {
+		return getGithubTokenStatus();
+	},
+	githubSetToken: async ({ token }) => {
+		const result = await setGithubToken(token);
+		if (result.ok) {
+			const current = await loadSettingsFromDisk();
+			await saveSettingsToDisk({
+				...current,
+				github: { ...current.github, hasToken: true },
+			});
+		}
+		return result;
+	},
+	githubDeleteToken: async () => {
+		await deleteGithubToken();
+		const current = await loadSettingsFromDisk();
+		await saveSettingsToDisk({
+			...current,
+			github: { ...current.github, hasToken: false },
+		});
+		return true;
+	},
+	githubFetchSearch: async ({ subType, query }) => {
+		const started = Date.now();
+		const label =
+			subType.kind === "native"
+				? subType.type
+				: `custom:${subType.filter.kind}:${subType.filter.name}`;
+		try {
+			const result = await githubFetchSearch({ subType, query });
+			console.log(
+				`[github] ${label} "${query}" → ${result.items.length} items ${
+					result.cached ? "(cache)" : `(${Date.now() - started}ms)`
+				}`,
+			);
+			return result;
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			console.error(
+				`[github] ${label} "${query}" failed after ${Date.now() - started}ms: ${message}`,
+			);
+			if (err instanceof Error && err.stack) {
+				console.error(err.stack);
+			}
+			throw err;
+		}
+	},
+	githubInvalidateCache: async () => {
+		invalidateSearchCache();
+		return true;
+	},
+	trackAnalyticsEvent: async ({ event, properties }) => {
+		trackEvent(event, properties);
+		return true;
+	},
+	setAnalyticsConsent: async ({ consentGiven }) => {
+		setAnalyticsEnabled(consentGiven);
+		return true;
+	},
+	claudeListSessions: async () => claudeListSessions(),
+	claudeCreateSession: async ({ prompt, cwd }) => {
+		const sessionId = await claudeCreateSession(prompt, cwd);
+		console.log(
+			`[claude:rpc] claudeCreateSession: auto-opening chat for sessionId=${sessionId}`,
+		);
+		openChatCallback?.(sessionId);
+		try {
+			const sessions = await claudeListSessions();
+			sessionsUpdatePusher?.({ sessions });
+		} catch (err) {
+			console.error("[claude:rpc] claudeCreateSession push failed:", err);
+		}
+		return { sessionId };
+	},
+	claudeResumeSession: async ({ sessionId }) => claudeResumeSession(sessionId),
+	claudeSendMessage: async ({ message }) => {
+		await claudeSendMessage(message);
+	},
+	claudeStopGeneration: async () => claudeStopGeneration(),
+	claudeDeleteSession: async ({ sessionId }) => {
+		const ok = await claudeDeleteSession(sessionId);
+		try {
+			const sessions = await claudeListSessions();
+			sessionsUpdatePusher?.({ sessions });
+		} catch (err) {
+			console.error("[claude:rpc] claudeDeleteSession push failed:", err);
+		}
+		return ok;
+	},
+	claudeGetSessionMessages: async ({ sessionId }) =>
+		claudeGetSessionMessages(sessionId),
+	claudeGetAuthStatus: async () => getClaudeAuthStatus(),
+	claudeLoginSSO: async () => loginAnthropicSSO(),
+	claudeLogoutSSO: async () => logoutAnthropicSSO(),
+	claudeSetBedrock: async (config) => setBedrockConfig(config),
+	claudeGetBedrock: async () => getBedrockConfig(),
+	claudeOpenChat: async ({ sessionId }) => {
+		console.log(
+			`[claude:rpc] claudeOpenChat: sessionId=${sessionId} hasCallback=${openChatCallback !== null}`,
+		);
+		openChatCallback?.(sessionId);
+		return true;
+	},
+	agentApproveTool: async ({ permissionId, behavior, modifiedArgs }) => {
+		const ok = getPermissionGate().approve(
+			permissionId,
+			behavior,
+			modifiedArgs,
+		);
+		console.log(
+			`[claude:rpc] agentApproveTool: permissionId=${permissionId} behavior=${behavior} ok=${ok}`,
+		);
+		return ok;
+	},
+	agentRejectTool: async ({ permissionId, reason }) => {
+		const ok = getPermissionGate().reject(permissionId, reason);
+		console.log(
+			`[claude:rpc] agentRejectTool: permissionId=${permissionId} ok=${ok}`,
+		);
+		return ok;
+	},
+	agentListMcpServers: async () => {
+		const file = await mcpLoader.load();
+		return file.servers;
+	},
+	agentSaveMcpServers: async ({ servers }) => {
+		try {
+			await mcpLoader.save({ version: 1, servers });
+			console.log(`[claude:rpc] agentSaveMcpServers: count=${servers.length}`);
+			return true;
+		} catch (err) {
+			console.error("[claude:rpc] agentSaveMcpServers failed:", err);
+			return false;
+		}
+	},
+};
+
 // Electrobun's `rpc` object maintains ONE transport. When a BrowserWindow is
 // created with `rpc`, its BrowserView calls `rpc.setTransport(...)` — so if
 // two windows share the same rpc instance, the second window to be created
@@ -354,299 +652,17 @@ async function getAppIconBase64(appPath: string): Promise<string | null> {
 function buildRpc() {
 	return defineElectrobunRPC<PtolomeuRPCSchema, "bun">("bun", {
 		handlers: {
-			requests: {
-				listApps: async () => {
-					return scanApps();
-				},
-				openApp: async ({ path }) => {
-					try {
-						Bun.spawn(["open", "-a", path]);
-						return true;
-					} catch {
-						return false;
-					}
-				},
-				openUrl: async ({ url }) => {
-					try {
-						Bun.spawn(["open", url]);
-						return true;
-					} catch {
-						return false;
-					}
-				},
-				getAppIcon: async ({ path }) => {
-					const icon = await getAppIconBase64(path);
-					return { icon };
-				},
-				resizeWindow: async ({ height, width }) => {
-					if (mainWindowRef) {
-						const frame = mainWindowRef.getFrame();
-						const nextWidth = width ?? 630;
-						if (frame.height === height && frame.width === nextWidth)
-							return true;
-						const newY = frame.y + (frame.height - height) / 2;
-						const newX = frame.x + (frame.width - nextWidth) / 2;
-						mainWindowRef.setFrame(newX, newY, nextWidth, height);
-						return true;
-					}
-					return false;
-				},
-				loadSettings: async () => {
-					return loadSettingsFromDisk();
-				},
-				saveSettings: async (next) => {
-					return saveSettingsToDisk(next);
-				},
-				getProxyStatus: async () => {
-					return getProxyStatusFromModule();
-				},
-				reloadProxyFromSystem: async () => {
-					return reloadProxyFromSystemModule();
-				},
-				saveManualProxy: async (args) => {
-					const host = args.host.trim();
-					if (!host || /\s|\//.test(host)) {
-						return { ok: false, error: "Host inválido" };
-					}
-					if (
-						!Number.isInteger(args.port) ||
-						args.port < 1 ||
-						args.port > 65535
-					) {
-						return { ok: false, error: "Porta deve estar entre 1 e 65535" };
-					}
-					if (args.protocol !== "http" && args.protocol !== "https") {
-						return { ok: false, error: "Protocolo inválido" };
-					}
-					const username = args.username?.trim() || undefined;
-					const ref = {
-						service: PROXY_KEYCHAIN_SERVICE,
-						account: manualAccountId({
-							protocol: args.protocol,
-							host,
-							port: args.port,
-						} as ManualProxySettings),
-					};
-					// Se senha foi fornecida, grava. Omitir mantém senha anterior.
-					let hasPassword: boolean;
-					if (args.password !== undefined) {
-						if (args.password.length === 0) {
-							// Senha explicitamente vazia → apagar entrada anterior.
-							await deletePassword(ref);
-							hasPassword = false;
-						} else {
-							const r = await setPassword(ref, args.password);
-							if (!r.ok) {
-								return { ok: false, error: r.error ?? "Falha no Keychain" };
-							}
-							hasPassword = true;
-						}
-					} else {
-						const current = await loadSettingsFromDisk();
-						hasPassword = current.proxy.manual?.hasPassword ?? false;
-					}
-					const manual: ManualProxySettings = {
-						protocol: args.protocol,
-						host,
-						port: args.port,
-						username,
-						hasPassword,
-						noProxy: args.noProxy.filter((x) => typeof x === "string"),
-					};
-					const current = await loadSettingsFromDisk();
-					const saved = await saveSettingsToDisk({
-						...current,
-						proxy: { mode: "manual", manual },
-					});
-					if (!saved) {
-						return { ok: false, error: "Falha ao gravar configurações" };
-					}
-					await initProxy("manual", manual);
-					return { ok: true };
-				},
-				clearManualProxy: async () => {
-					const current = await loadSettingsFromDisk();
-					const m = current.proxy.manual;
-					if (m) {
-						await deletePassword({
-							service: PROXY_KEYCHAIN_SERVICE,
-							account: manualAccountId(m),
-						});
-					}
-					await saveSettingsToDisk({
-						...current,
-						proxy: { mode: "auto" },
-					});
-					await initProxy("auto");
-					return true;
-				},
-				testProxyConnection: async ({ testUrl }) => {
-					const url = testUrl ?? "https://api.github.com";
-					const started = Date.now();
-					try {
-						const res = await fetchWithProxy(url, {
-							signal: AbortSignal.timeout(10_000),
-							headers: { "User-Agent": "Ptolomeu-ProxyTest" },
-						});
-						return {
-							ok: res.ok,
-							status: res.status,
-							latencyMs: Date.now() - started,
-						};
-					} catch (err) {
-						return {
-							ok: false,
-							error: err instanceof Error ? err.message : String(err),
-							latencyMs: Date.now() - started,
-						};
-					}
-				},
-				githubGetTokenStatus: async () => {
-					return getGithubTokenStatus();
-				},
-				githubSetToken: async ({ token }) => {
-					const result = await setGithubToken(token);
-					if (result.ok) {
-						const current = await loadSettingsFromDisk();
-						await saveSettingsToDisk({
-							...current,
-							github: { ...current.github, hasToken: true },
-						});
-					}
-					return result;
-				},
-				githubDeleteToken: async () => {
-					await deleteGithubToken();
-					const current = await loadSettingsFromDisk();
-					await saveSettingsToDisk({
-						...current,
-						github: { ...current.github, hasToken: false },
-					});
-					return true;
-				},
-				githubFetchSearch: async ({ subType, query }) => {
-					const started = Date.now();
-					const label =
-						subType.kind === "native"
-							? subType.type
-							: `custom:${subType.filter.kind}:${subType.filter.name}`;
-					try {
-						const result = await githubFetchSearch({ subType, query });
-						console.log(
-							`[github] ${label} "${query}" → ${result.items.length} items ${
-								result.cached ? "(cache)" : `(${Date.now() - started}ms)`
-							}`,
-						);
-						return result;
-					} catch (err) {
-						const message = err instanceof Error ? err.message : String(err);
-						console.error(
-							`[github] ${label} "${query}" failed after ${Date.now() - started}ms: ${message}`,
-						);
-						if (err instanceof Error && err.stack) {
-							console.error(err.stack);
-						}
-						throw err;
-					}
-				},
-				githubInvalidateCache: async () => {
-					invalidateSearchCache();
-					return true;
-				},
-				trackAnalyticsEvent: async ({ event, properties }) => {
-					trackEvent(event, properties);
-					return true;
-				},
-				setAnalyticsConsent: async ({ consentGiven }) => {
-					setAnalyticsEnabled(consentGiven);
-					return true;
-				},
-				claudeListSessions: async () => claudeListSessions(),
-				claudeCreateSession: async ({ prompt, cwd }) => {
-					const sessionId = await claudeCreateSession(prompt, cwd);
-					console.log(
-						`[claude:rpc] claudeCreateSession: auto-opening chat for sessionId=${sessionId}`,
-					);
-					openChatCallback?.(sessionId);
-					try {
-						const sessions = await claudeListSessions();
-						mainRpc.send.claudeSessionsUpdate({ sessions });
-					} catch (err) {
-						console.error("[claude:rpc] claudeCreateSession push failed:", err);
-					}
-					return { sessionId };
-				},
-				claudeResumeSession: async ({ sessionId }) =>
-					claudeResumeSession(sessionId),
-				claudeSendMessage: async ({ message }) => {
-					await claudeSendMessage(message);
-				},
-				claudeStopGeneration: async () => claudeStopGeneration(),
-				claudeDeleteSession: async ({ sessionId }) => {
-					const ok = await claudeDeleteSession(sessionId);
-					try {
-						const sessions = await claudeListSessions();
-						mainRpc.send.claudeSessionsUpdate({ sessions });
-					} catch (err) {
-						console.error("[claude:rpc] claudeDeleteSession push failed:", err);
-					}
-					return ok;
-				},
-				claudeGetSessionMessages: async ({ sessionId }) =>
-					claudeGetSessionMessages(sessionId),
-				claudeGetAuthStatus: async () => getClaudeAuthStatus(),
-				claudeLoginSSO: async () => loginAnthropicSSO(),
-				claudeLogoutSSO: async () => logoutAnthropicSSO(),
-				claudeSetBedrock: async (config) => setBedrockConfig(config),
-				claudeGetBedrock: async () => getBedrockConfig(),
-				claudeOpenChat: async ({ sessionId }) => {
-					console.log(
-						`[claude:rpc] claudeOpenChat: sessionId=${sessionId} hasCallback=${openChatCallback !== null}`,
-					);
-					openChatCallback?.(sessionId);
-					return true;
-				},
-				agentApproveTool: async ({ permissionId, behavior, modifiedArgs }) => {
-					const ok = getPermissionGate().approve(
-						permissionId,
-						behavior,
-						modifiedArgs,
-					);
-					console.log(
-						`[claude:rpc] agentApproveTool: permissionId=${permissionId} behavior=${behavior} ok=${ok}`,
-					);
-					return ok;
-				},
-				agentRejectTool: async ({ permissionId, reason }) => {
-					const ok = getPermissionGate().reject(permissionId, reason);
-					console.log(
-						`[claude:rpc] agentRejectTool: permissionId=${permissionId} ok=${ok}`,
-					);
-					return ok;
-				},
-				agentListMcpServers: async () => {
-					const file = await mcpLoader.load();
-					return file.servers;
-				},
-				agentSaveMcpServers: async ({ servers }) => {
-					try {
-						await mcpLoader.save({ version: 1, servers });
-						console.log(
-							`[claude:rpc] agentSaveMcpServers: count=${servers.length}`,
-						);
-						return true;
-					} catch (err) {
-						console.error("[claude:rpc] agentSaveMcpServers failed:", err);
-						return false;
-					}
-				},
-			},
+			requests: requestHandlers,
 		},
 	});
 }
 
 export const mainRpc = buildRpc();
 export const chatRpc = buildRpc();
+
+// Wire the late-bound sessions pusher so handlers can push claudeSessionsUpdate
+// to the palette window. Done after `mainRpc` exists to avoid TDZ.
+setSessionsUpdatePusher((args) => mainRpc.send.claudeSessionsUpdate(args));
 
 // Wire the streaming sender so session-manager can push stream events to the
 // chat window specifically. Using chatRpc avoids the transport-swap problem
