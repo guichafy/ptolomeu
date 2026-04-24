@@ -61,8 +61,9 @@ jobs:
       - name: Build dev .app bundle
         run: bun run build:dev-bundle
 
-      - name: Install Appium Mac2 driver
-        run: bun run appium:install-driver
+      # Appium Mac2 driver is shipped as a devDependency and auto-registers
+      # when `bun install` pulls it into node_modules — no explicit
+      # `appium driver install` step is required.
 
       # Appium Mac2 needs Accessibility permission to deliver keystrokes.
       # On GitHub-hosted macOS runners the runner process runs as the user and
