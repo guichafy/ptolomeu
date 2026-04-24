@@ -1,5 +1,6 @@
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { CodeBlock } from "./code-block";
 
 interface MarkdownContentProps {
@@ -107,7 +108,9 @@ const components: Components = {
 export function MarkdownContent({ content }: MarkdownContentProps) {
 	return (
 		<div className="text-sm text-foreground">
-			<ReactMarkdown components={components}>{content}</ReactMarkdown>
+			<ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
+				{content}
+			</ReactMarkdown>
 		</div>
 	);
 }
