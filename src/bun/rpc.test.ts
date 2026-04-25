@@ -21,8 +21,8 @@ const claudeStopGenerationMock = vi.fn();
 const claudeDeleteSessionMock = vi.fn();
 const claudeGetSessionMessagesMock = vi.fn();
 const getClaudeAuthStatusMock = vi.fn();
-const loginAnthropicSSOMock = vi.fn();
-const logoutAnthropicSSOMock = vi.fn();
+const openClaudeLoginMock = vi.fn();
+const installClaudeCliMock = vi.fn();
 const setBedrockConfigMock = vi.fn();
 const getBedrockConfigMock = vi.fn();
 const claudeSetSenderMock = vi.fn();
@@ -71,8 +71,8 @@ vi.mock("./claude/session-manager", () => ({
 }));
 vi.mock("./claude/auth", () => ({
 	getClaudeAuthStatus: getClaudeAuthStatusMock,
-	loginAnthropicSSO: loginAnthropicSSOMock,
-	logoutAnthropicSSO: logoutAnthropicSSOMock,
+	openClaudeLogin: openClaudeLoginMock,
+	installClaudeCli: installClaudeCliMock,
 	setBedrockConfig: setBedrockConfigMock,
 	getBedrockConfig: getBedrockConfigMock,
 }));
@@ -171,8 +171,8 @@ describe("rpc.requestHandlers", () => {
 			"claudeDeleteSession",
 			"claudeGetSessionMessages",
 			"claudeGetAuthStatus",
-			"claudeLoginSSO",
-			"claudeLogoutSSO",
+			"claudeOpenLogin",
+			"claudeInstallCli",
 			"claudeSetBedrock",
 			"claudeGetBedrock",
 			"claudeOpenChat",
