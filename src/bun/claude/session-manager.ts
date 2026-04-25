@@ -459,12 +459,11 @@ async function tryGetCachedModels(
 }
 
 function notifySessionModelChanged(sessionId: string, model: string): void {
-	// AgentEvent type extension lands in Task 7. Type-assert until then.
 	sender.sendEvent?.(sessionId, {
 		type: "session-model-changed",
 		sessionId,
 		model,
-	} as never);
+	});
 }
 
 async function primeModelsCacheFromQuery(

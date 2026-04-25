@@ -18,6 +18,24 @@ export type PermissionMode =
 	| "dontAsk"
 	| "auto";
 
+export type ClaudeAuthMode = "anthropic" | "bedrock";
+
+/**
+ * Subset of the SDK's `ModelInfo` that crosses the RPC boundary.
+ * Mirrors @anthropic-ai/claude-agent-sdk's ModelInfo shape but is declared
+ * here so the renderer bundle does not pull the SDK.
+ */
+export interface ProtocolModelInfo {
+	value: string;
+	displayName: string;
+	description: string;
+	supportsEffort?: boolean;
+	supportedEffortLevels?: ("low" | "medium" | "high" | "xhigh" | "max")[];
+	supportsAdaptiveThinking?: boolean;
+	supportsFastMode?: boolean;
+	supportsAutoMode?: boolean;
+}
+
 export type ThinkingConfig =
 	| { type: "adaptive" }
 	| { type: "enabled"; budgetTokens?: number }
@@ -217,7 +235,9 @@ export type AgentEvent =
 	| {
 			type: "error";
 			error: { message: string; code?: string; recoverable: boolean };
-	  };
+	  }
+	| { type: "session-model-changed"; sessionId: string; model: string }
+	| { type: "models-cache-invalidated"; authMode: ClaudeAuthMode };
 
 // ---------------------------------------------------------------------------
 // Commands (renderer → main)
