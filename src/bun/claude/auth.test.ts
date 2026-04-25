@@ -3,6 +3,8 @@ import {
 	detectClaudeCli,
 	detectClaudeCodeKeychain,
 	getClaudeAuthStatus,
+	installClaudeCli,
+	openClaudeLogin,
 } from "./auth";
 
 const originalSpawn = (Bun as unknown as { spawn: typeof Bun.spawn }).spawn;
@@ -142,5 +144,34 @@ describe("getClaudeAuthStatus", () => {
 		const status = await getClaudeAuthStatus();
 		expect(status.anthropic?.cliStatus).toBe("authenticated");
 		expect(status.mode).toBe("anthropic");
+	});
+});
+
+describe("installClaudeCli", () => {
+	it("invokes osascript with the curl install script and activates Terminal", async () => {
+		const calls = mockSpawn(() => ({ exit: 0 }));
+		const result = await installClaudeCli();
+		expect(result.ok).toBe(true);
+		expect(calls[0].cmd[0]).toBe("osascript");
+		expect(calls[0].cmd.some((a) => a.includes("claude.ai/install.sh"))).toBe(
+			true,
+		);
+		expect(calls[0].cmd.some((a) => a.includes("activate"))).toBe(true);
+	});
+
+	it("returns error when osascript fails", async () => {
+		mockSpawn(() => ({ exit: 1 }));
+		const result = await installClaudeCli();
+		expect(result.ok).toBe(false);
+		expect(result.error).toBe("Falha ao abrir o Terminal");
+	});
+});
+
+describe("openClaudeLogin", () => {
+	it("invokes osascript with claude /login", async () => {
+		const calls = mockSpawn(() => ({ exit: 0 }));
+		const result = await openClaudeLogin();
+		expect(result.ok).toBe(true);
+		expect(calls[0].cmd.some((a) => a.includes("claude /login"))).toBe(true);
 	});
 });
