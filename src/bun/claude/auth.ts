@@ -97,10 +97,13 @@ export async function detectClaudeCli(): Promise<ClaudeCliInfo> {
 			stdout: "pipe",
 			stderr: "pipe",
 		});
-		const code = await proc.exited;
+		const [code, out] = await Promise.all([
+			proc.exited,
+			new Response(proc.stdout).text(),
+		]);
 		if (code === 0) {
-			const out = (await new Response(proc.stdout).text()).trim();
-			if (out) return { installed: true, path: out };
+			const trimmed = out.trim();
+			if (trimmed) return { installed: true, path: trimmed };
 		}
 	} catch {
 		// fall through to path probe
