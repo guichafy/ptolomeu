@@ -184,6 +184,14 @@ function extractToolResultsFromUserMessage(
  * This function resolves when the stream ends (either by result or by the
  * generator returning). It rejects only on unexpected errors; normal SDK
  * errors (e.g. max turns) are forwarded as `agentEvent` `finish`/`error`.
+ *
+ * Accepts any `AsyncIterable<SDKMessage>` (e.g. the legacy `SDKSession.stream()`
+ * or the stable `Query` returned by `query()`).
+ *
+ * `hooks.onTurnComplete` fires synchronously after each `result` message is
+ * fully persisted and the per-turn state (`accumulatedBlocks`, `toolElapsed`)
+ * has been cleared, but before the next turn's messages begin. Exceptions
+ * thrown by the callback are caught and logged; they do not abort the stream.
  */
 export async function startStreamingLoop(
 	stream: AsyncIterable<SDKMessage>,
@@ -369,7 +377,14 @@ export async function startStreamingLoop(
 
 				accumulatedBlocks = [];
 				toolElapsed.clear();
-				hooks.onTurnComplete?.();
+				try {
+					hooks.onTurnComplete?.();
+				} catch (hookErr) {
+					console.error(
+						`[claude:stream] onTurnComplete hook threw: sessionId=${sessionId}`,
+						hookErr,
+					);
+				}
 			}
 		}
 
