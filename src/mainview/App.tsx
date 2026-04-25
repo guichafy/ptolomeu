@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import { initRendererAnalytics, shutdownRendererAnalytics } from "./analytics";
 import { CalculatorResult } from "./components/calculator-result";
 import { ModeBar } from "./components/mode-bar";
@@ -149,7 +150,7 @@ function PaletteContent() {
 				activeProvider.id === "calc"
 					? 100
 					: activeProvider.id === "apps"
-						? 0
+						? 80
 						: 300,
 			);
 			return () => clearTimeout(timer);
@@ -215,23 +216,36 @@ function PaletteContent() {
 	const hasIdleResults =
 		activeProvider.id === "claude" && results.length > 0 && !query.trim();
 	const resultsMatchQuery = resultsQueryRef.current === query;
-	const hasContent =
-		hasIdleResults ||
-		(query.trim().length > 0 &&
-			((resultsMatchQuery && results.length > 0) ||
-				isLoading ||
-				error !== null));
+	// Stable signal for window expansion: tracks user intent (typing) rather
+	// than the in-flight fetch state, so the native window does not collapse
+	// in the gap between keystroke and result arrival.
+	const shouldShowResultsArea =
+		hasIdleResults || query.trim().length > 0 || isComboboxOpen;
+	const hasFreshResults = resultsMatchQuery && results.length > 0;
+	const hasAnyResults = results.length > 0;
 
-	// Resize native window when content appears/disappears, settings dialog toggles, or combobox opens
+	// Defer the full-screen "Buscando..." flash so quick searches (calc, apps)
+	// never show it. Only flips to true after isLoading stays true past 150ms.
+	const [showLoadingState, setShowLoadingState] = useState(false);
+	useEffect(() => {
+		if (!isLoading) {
+			setShowLoadingState(false);
+			return;
+		}
+		const timer = setTimeout(() => setShowLoadingState(true), 150);
+		return () => clearTimeout(timer);
+	}, [isLoading]);
+
+	// Resize native window only when typing intent or settings/combobox toggle.
 	useEffect(() => {
 		const height = isSettingsOpen
 			? SETTINGS_HEIGHT
-			: isComboboxOpen || hasContent
+			: shouldShowResultsArea
 				? EXPANDED_HEIGHT
 				: COLLAPSED_HEIGHT;
 		const width = isSettingsOpen ? SETTINGS_WIDTH : DEFAULT_WIDTH;
 		rpc.request.resizeWindow({ height, width }).catch(() => {});
-	}, [hasContent, isSettingsOpen, isComboboxOpen]);
+	}, [shouldShowResultsArea, isSettingsOpen]);
 
 	function handleKeyDown(e: React.KeyboardEvent) {
 		if (activeProvider.id === "github" && e.metaKey) {
@@ -314,8 +328,8 @@ function PaletteContent() {
 				/>
 			</div>
 
-			{isCalc && hasContent ? (
-				<div className="flex-1 animate-in fade-in-0 slide-in-from-top-2 duration-200">
+			{isCalc && shouldShowResultsArea ? (
+				<div className="flex-1">
 					<CalculatorResult
 						expression={query}
 						result={calcResult?.title ?? null}
@@ -326,10 +340,15 @@ function PaletteContent() {
 						}
 					/>
 				</div>
-			) : hasContent ? (
-				<div className="flex-1 flex flex-col overflow-hidden animate-in fade-in-0 slide-in-from-top-2 duration-200">
-					{results.length > 0 && resultsMatchQuery ? (
-						<ScrollArea className="flex-1">
+			) : shouldShowResultsArea ? (
+				<div className="flex-1 flex flex-col overflow-hidden">
+					{hasAnyResults ? (
+						<ScrollArea
+							className={cn(
+								"flex-1 transition-opacity duration-150",
+								isLoading && !hasFreshResults && "opacity-70",
+							)}
+						>
 							<div className="p-2">
 								{results.map((result, i) => (
 									<ResultItem
@@ -341,7 +360,7 @@ function PaletteContent() {
 								))}
 							</div>
 						</ScrollArea>
-					) : isLoading ? (
+					) : showLoadingState ? (
 						<div className="flex-1 flex items-center justify-center">
 							<p className="text-sm text-muted-foreground animate-pulse">
 								Buscando...
@@ -351,17 +370,19 @@ function PaletteContent() {
 						<div className="flex-1 flex items-center justify-center px-4">
 							<p className="text-sm text-destructive text-center">{error}</p>
 						</div>
-					) : (
+					) : !isLoading && resultsMatchQuery ? (
 						<div className="flex-1 flex items-center justify-center">
 							<p className="text-sm text-muted-foreground">
 								Nenhum resultado encontrado
 							</p>
 						</div>
+					) : (
+						<div className="flex-1" />
 					)}
 				</div>
 			) : null}
 
-			{hasContent && (
+			{shouldShowResultsArea && (
 				<div className="flex items-center justify-between px-4 py-1.5 border-t border-border/40">
 					<span className="text-[10px] text-muted-foreground/60">
 						↑↓ navegar
