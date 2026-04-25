@@ -35,6 +35,10 @@ const overlaySymbols = {
 		args: [],
 		returns: FFIType.void,
 	},
+	setTrayLength: {
+		args: [FFIType.ptr, FFIType.f64],
+		returns: FFIType.void,
+	},
 } as const;
 
 let overlayLib: ReturnType<typeof dlopen<typeof overlaySymbols>>;
@@ -214,12 +218,18 @@ trackEvent("app_launched", { version: "1.2.0" });
 // Create system tray with app icon
 const trayIconPath = join(import.meta.dir, "..", "native", "tray-icon.png");
 const tray = new Tray({
-	title: "Ptolomeu",
+	title: "",
 	image: trayIconPath,
 	template: false,
-	width: 22,
-	height: 22,
+	width: 32,
+	height: 14,
 });
+
+// Shrink the menu bar slot beyond what Electrobun's `width` allows — that
+// option only resizes the rendered image, not the NSStatusItem's length.
+if (tray.ptr) {
+	overlayLib.symbols.setTrayLength(tray.ptr, 28);
+}
 
 tray.setMenu([
 	{ type: "normal", label: "Abrir", action: "open-window" },
