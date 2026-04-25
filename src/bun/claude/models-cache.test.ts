@@ -20,19 +20,19 @@ describe("models-cache", () => {
 		expect(peekModels("anthropic")).toBeNull();
 	});
 
-	test("putModelsFromInit fills cache for current authMode (defaults to anthropic)", async () => {
-		await putModelsFromInit(SAMPLE);
+	test("putModelsFromInit fills cache for the given authMode", () => {
+		putModelsFromInit(SAMPLE, "anthropic");
 		expect(peekModels("anthropic")).toEqual(SAMPLE);
 	});
 
-	test("invalidate clears the entry for one authMode", async () => {
-		await putModelsFromInit(SAMPLE);
+	test("invalidate clears the entry for one authMode", () => {
+		putModelsFromInit(SAMPLE, "anthropic");
 		invalidate("anthropic");
 		expect(peekModels("anthropic")).toBeNull();
 	});
 
-	test("invalidate() with no args clears all", async () => {
-		await putModelsFromInit(SAMPLE);
+	test("invalidate() with no args clears all", () => {
+		putModelsFromInit(SAMPLE, "anthropic");
 		invalidate();
 		expect(peekModels("anthropic")).toBeNull();
 	});
@@ -64,6 +64,29 @@ describe("models-cache", () => {
 		await expect(getModels("anthropic", { discover })).rejects.toThrow(
 			/offline/,
 		);
+		expect(peekModels("anthropic")).toBeNull();
+	});
+
+	test("getModels returns cached value without re-discovering", async () => {
+		const discover = vi.fn().mockResolvedValue(SAMPLE);
+		await getModels("anthropic", { discover });
+		const second = await getModels("anthropic", { discover });
+		expect(second).toEqual(SAMPLE);
+		expect(discover).toHaveBeenCalledOnce();
+	});
+
+	test("invalidate during in-flight discovery prevents stale cache.set", async () => {
+		let resolve!: (v: ModelInfo[]) => void;
+		const discover = vi.fn().mockImplementation(
+			() =>
+				new Promise<ModelInfo[]>((r) => {
+					resolve = r;
+				}),
+		);
+		const pending = getModels("anthropic", { discover });
+		invalidate("anthropic");
+		resolve(SAMPLE);
+		await pending; // resolves successfully (returns models) but cache must stay empty
 		expect(peekModels("anthropic")).toBeNull();
 	});
 });

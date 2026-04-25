@@ -158,6 +158,7 @@ let active: { sessionId: string; q: ActiveQuery } | null = null;
 let pendingNew: {
 	id: string;
 	inbox: MessageInbox;
+	authMode: SessionMeta["authMode"];
 	options: ReturnType<typeof buildQueryOptions>;
 } | null = null;
 
@@ -427,7 +428,8 @@ type ModelsCacheModule = {
 	) => import("@anthropic-ai/claude-agent-sdk").ModelInfo[] | null;
 	putModelsFromInit: (
 		models: import("@anthropic-ai/claude-agent-sdk").ModelInfo[],
-	) => Promise<void>;
+		authMode: SessionMeta["authMode"],
+	) => void;
 };
 
 // Indirect specifier so TypeScript doesn't statically resolve the module
@@ -465,12 +467,15 @@ function notifySessionModelChanged(sessionId: string, model: string): void {
 	} as never);
 }
 
-async function primeModelsCacheFromQuery(q: Query): Promise<void> {
+async function primeModelsCacheFromQuery(
+	q: Query,
+	authMode: SessionMeta["authMode"],
+): Promise<void> {
 	try {
 		const mod = await loadModelsCache();
 		if (!mod) return;
 		const init = await q.initializationResult();
-		await mod.putModelsFromInit(init.models);
+		mod.putModelsFromInit(init.models, authMode);
 	} catch (err) {
 		// init result not yet available or other transient failure; ignore.
 		verbose(`[claude:session] primeModelsCacheFromQuery skipped: ${err}`);
@@ -629,6 +634,7 @@ export async function createSession(
 	pendingNew = {
 		id,
 		inbox,
+		authMode,
 		options: buildQueryOptions({
 			model,
 			permissionMode,
@@ -674,6 +680,7 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 
 	// Case 2: deferred new session — first resume from chat window after createSession
 	if (pendingNew && pendingNew.id === sessionId) {
+		const pendingAuthMode = pendingNew.authMode;
 		const q = query({
 			prompt: pendingNew.inbox.iterable,
 			options: pendingNew.options,
@@ -688,7 +695,7 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 			},
 		};
 		pendingNew = null;
-		void primeModelsCacheFromQuery(q);
+		void primeModelsCacheFromQuery(q, pendingAuthMode);
 		return startLoopForActive(sessionId);
 	}
 
@@ -756,7 +763,7 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 			sessionId,
 			q: { query: q, inbox, streamingLoop: null, turnCompletionQueue: [] },
 		};
-		void primeModelsCacheFromQuery(q);
+		void primeModelsCacheFromQuery(q, meta.authMode);
 
 		console.log(
 			`[claude:session] resumeSession ready: id=${sessionId} sdkSessionId=${meta.sdkSessionId} model=${model}`,
