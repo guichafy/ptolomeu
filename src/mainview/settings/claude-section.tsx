@@ -30,8 +30,11 @@ export function ClaudeSection() {
 	// Auth state
 	const [authStatus, setAuthStatus] = useState<ClaudeAuthStatus | null>(null);
 	const [authLoading, setAuthLoading] = useState(true);
-	const [ssoLoading, setSsoLoading] = useState(false);
-	const [ssoError, setSsoError] = useState<string | null>(null);
+	const [actionLoading, setActionLoading] = useState<
+		"install" | "login" | null
+	>(null);
+	const [actionError, setActionError] = useState<string | null>(null);
+	const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
 	// Auth mode toggle (local, synced to settings)
 	const [authMode, setAuthMode] = useState<ClaudeAuthMode>(
@@ -152,24 +155,34 @@ export function ClaudeSection() {
 		persistClaudeSetting({ authMode: mode });
 	}
 
-	async function handleSSOLogin() {
-		setSsoError(null);
-		setSsoLoading(true);
+	async function handleInstallCli() {
+		setActionError(null);
+		setActionLoading("install");
 		try {
-			const result = await rpc.request.claudeLoginSSO();
+			const result = await rpc.request.claudeInstallCli();
 			if (!result.ok) {
-				setSsoError(result.error ?? "Falha ao conectar");
+				setActionError(result.error ?? "Falha ao abrir o Terminal");
 				return;
 			}
-			await refreshAuth();
+			setPendingMessage("Instalando no Terminal aberto...");
 		} finally {
-			setSsoLoading(false);
+			setActionLoading(null);
 		}
 	}
 
-	async function handleSSOLogout() {
-		await rpc.request.claudeLogoutSSO();
-		await refreshAuth();
+	async function handleOpenLogin() {
+		setActionError(null);
+		setActionLoading("login");
+		try {
+			const result = await rpc.request.claudeOpenLogin();
+			if (!result.ok) {
+				setActionError(result.error ?? "Falha ao abrir o Terminal");
+				return;
+			}
+			setPendingMessage("Conclua o login no Terminal aberto.");
+		} finally {
+			setActionLoading(null);
+		}
 	}
 
 	async function handleBedrockSave() {
@@ -208,9 +221,6 @@ export function ClaudeSection() {
 			setClearingHistory(false);
 		}
 	}
-
-	const isAnthropicConnected =
-		authStatus?.mode === "anthropic" && authStatus.anthropic?.connected;
 
 	return (
 		<div className="flex flex-col gap-5">
@@ -264,59 +274,77 @@ export function ClaudeSection() {
 									Verificando...
 								</span>
 							</div>
-						) : (
+						) : authStatus?.anthropic?.cliStatus === "authenticated" ? (
 							<>
 								<div className="flex items-center gap-2">
-									<span className="text-xs font-medium text-muted-foreground">
-										Status:
-									</span>
 									<Badge
-										className={cn(
-											"text-[10px] px-1.5 py-0",
-											isAnthropicConnected
-												? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-												: "border-border bg-muted text-muted-foreground",
-										)}
+										className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[10px] px-1.5 py-0"
 										variant="outline"
 									>
-										{isAnthropicConnected ? "Conectado" : "Desconectado"}
+										Conectado via Claude Code
 									</Badge>
 								</div>
-
-								{isAnthropicConnected ? (
-									<div className="flex items-center justify-between">
-										<span className="text-xs text-muted-foreground">
-											{authStatus.anthropic?.email ?? "Conta conectada"}
-										</span>
-										<Button
-											size="sm"
-											variant="ghost"
-											className="h-7 text-xs text-muted-foreground"
-											onClick={handleSSOLogout}
-										>
-											Desconectar
-										</Button>
-									</div>
-								) : (
-									<div className="flex flex-col gap-2">
-										<Button
-											size="sm"
-											className="h-7 text-xs w-fit"
-											onClick={handleSSOLogin}
-											disabled={ssoLoading}
-										>
-											{ssoLoading ? (
-												<Loader2 className="h-3 w-3 animate-spin" />
-											) : (
-												"Conectar"
-											)}
-										</Button>
-										{ssoError && (
-											<p className="text-xs text-destructive">{ssoError}</p>
-										)}
-									</div>
-								)}
+								<p className="text-xs text-muted-foreground">
+									Usando credencial do Claude Code instalado no sistema.
+								</p>
+								<p className="text-[10px] text-muted-foreground/70">
+									Para desconectar, rode <code>claude /logout</code> no
+									Terminal.
+								</p>
 							</>
+						) : authStatus?.anthropic?.cliStatus === "not-installed" ? (
+							<div className="flex flex-col gap-2">
+								<p className="text-xs text-muted-foreground">
+									O Claude Code não está instalado. Ele será baixado de{" "}
+									<code>claude.ai/install.sh</code> e instalado via Terminal.
+								</p>
+								<Button
+									size="sm"
+									className="h-7 text-xs w-fit"
+									onClick={handleInstallCli}
+									disabled={actionLoading !== null}
+								>
+									{actionLoading === "install" ? (
+										<Loader2 className="h-3 w-3 animate-spin" />
+									) : (
+										"Instalar Claude Code"
+									)}
+								</Button>
+								{pendingMessage && (
+									<p className="text-xs text-muted-foreground">
+										{pendingMessage}
+									</p>
+								)}
+								{actionError && (
+									<p className="text-xs text-destructive">{actionError}</p>
+								)}
+							</div>
+						) : (
+							<div className="flex flex-col gap-2">
+								<p className="text-xs text-muted-foreground">
+									Você precisa entrar na sua conta Anthropic pelo Claude Code.
+								</p>
+								<Button
+									size="sm"
+									className="h-7 text-xs w-fit"
+									onClick={handleOpenLogin}
+									disabled={actionLoading !== null}
+								>
+									{actionLoading === "login" ? (
+										<Loader2 className="h-3 w-3 animate-spin" />
+									) : (
+										"Abrir Claude Code para conectar"
+									)}
+								</Button>
+								{pendingMessage && (
+									<p className="text-xs text-muted-foreground">
+										{pendingMessage}
+									</p>
+								)}
+								{actionError && (
+									<p className="text-xs text-destructive">{actionError}</p>
+								)}
+							</div>
 						)}
 					</div>
 				)}
