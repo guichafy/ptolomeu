@@ -1,12 +1,16 @@
 import { Bot } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { ModelPicker } from "@/components/claude/model-picker";
 import { cn } from "@/lib/utils";
+import type { ProtocolModelInfo } from "@/shared/agent-protocol";
+import { rpc } from "../rpc";
 
 type SessionState = "idle" | "streaming" | "tool_running" | "error";
 
 interface ChatHeaderProps {
 	sessionId: string | null;
 	sessionState: SessionState;
+	sessionModel: string | null;
+	models: ProtocolModelInfo[];
 }
 
 const stateConfig: Record<SessionState, { color: string; pulse: boolean }> = {
@@ -16,8 +20,21 @@ const stateConfig: Record<SessionState, { color: string; pulse: boolean }> = {
 	error: { color: "bg-red-500", pulse: false },
 };
 
-export function ChatHeader({ sessionId, sessionState }: ChatHeaderProps) {
+export function ChatHeader({
+	sessionId,
+	sessionState,
+	sessionModel,
+	models,
+}: ChatHeaderProps) {
 	const { color, pulse } = stateConfig[sessionState];
+	const handleChange = async (model: string) => {
+		if (!sessionId) return;
+		try {
+			await rpc.request.claudeSetSessionModel({ sessionId, model });
+		} catch (err) {
+			console.error("[chat-header] setSessionModel failed:", err);
+		}
+	};
 
 	return (
 		<div className="flex items-center gap-3 border-b border-border/40 px-4 py-2.5">
@@ -30,12 +47,14 @@ export function ChatHeader({ sessionId, sessionState }: ChatHeaderProps) {
 					pulse && "animate-pulse",
 				)}
 			/>
-			<Badge
-				variant="secondary"
-				className="px-1.5 py-0 text-[10px] font-normal"
-			>
-				Sonnet 4.6
-			</Badge>
+			<ModelPicker
+				variant="session"
+				value={sessionModel}
+				models={models}
+				onChange={handleChange}
+				disabled={sessionState !== "idle" || !sessionId}
+				placeholder="Selecionar modelo"
+			/>
 			{sessionId && (
 				<span className="ml-auto text-xs text-muted-foreground/60 truncate">
 					{sessionId.slice(0, 8)}

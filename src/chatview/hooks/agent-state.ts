@@ -93,6 +93,7 @@ export interface AgentState {
 	totalCostUsd: number | null;
 	durationMs: number | null;
 	suggestions: string[];
+	sessionModel: string | null;
 }
 
 export function initialAgentState(): AgentState {
@@ -108,6 +109,7 @@ export function initialAgentState(): AgentState {
 		totalCostUsd: null,
 		durationMs: null,
 		suggestions: [],
+		sessionModel: null,
 	};
 }
 
@@ -314,6 +316,9 @@ export function reduceAgentState(
 				lastError: event.error,
 				sessionState: event.error.recoverable ? state.sessionState : "error",
 			};
+
+		case "session-model-changed":
+			return { ...state, sessionModel: event.model };
 
 		default:
 			return state;
