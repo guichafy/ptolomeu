@@ -2,7 +2,12 @@ import { readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { defineElectrobunRPC, type ElectrobunRPCSchema } from "electrobun/bun";
-import type { AgentEvent, ApproveBehavior } from "@/shared/agent-protocol";
+import type {
+	AgentEvent,
+	ApproveBehavior,
+	ClaudeAuthMode,
+	ProtocolModelInfo,
+} from "@/shared/agent-protocol";
 import { setAnalyticsEnabled, trackEvent } from "./analytics";
 import {
 	type BedrockConfig,
@@ -113,7 +118,10 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				params: { sessionId: string };
 				response: boolean;
 			};
-			claudeSendMessage: { params: { message: string }; response: void };
+			claudeSendMessage: {
+				params: { message: string; modelOverride?: string };
+				response: void;
+			};
 			claudeStopGeneration: { params: void; response: boolean };
 			claudeDeleteSession: {
 				params: { sessionId: string };
@@ -131,6 +139,17 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeLogoutSSO: { params: void; response: boolean };
 			claudeSetBedrock: { params: BedrockConfig; response: boolean };
 			claudeGetBedrock: { params: void; response: BedrockConfig | null };
+			claudeListSupportedModels: {
+				params: void;
+				response: { models: ProtocolModelInfo[]; authMode: ClaudeAuthMode };
+			};
+			claudeSetSessionModel: {
+				params: { sessionId: string; model: string };
+				response: {
+					ok: boolean;
+					reason?: "session-not-found" | "session-busy" | "sdk-error";
+				};
+			};
 			claudeOpenChat: {
 				params: { sessionId?: string };
 				response: boolean;
@@ -342,6 +361,22 @@ export function setSessionsUpdatePusher(
 	sessionsUpdatePusher = fn;
 }
 
+// Late-bound pusher for `models-cache-invalidated` events. Same TDZ-avoidance
+// pattern as `sessionsUpdatePusher` above.
+let modelsInvalidatedPusher: ((authMode: ClaudeAuthMode) => void) | null = null;
+
+export function setModelsInvalidatedPusher(
+	fn: ((authMode: ClaudeAuthMode) => void) | null,
+) {
+	modelsInvalidatedPusher = fn;
+}
+
+async function invalidateModelsCache(authMode: ClaudeAuthMode): Promise<void> {
+	const { invalidate } = await import("./claude/models-cache");
+	invalidate();
+	modelsInvalidatedPusher?.(authMode);
+}
+
 // Request handlers extracted as a top-level const so tests can exercise each
 // one directly with mocked module deps, without having to spin up the
 // Electrobun RPC transport. The object shape is validated against
@@ -386,7 +421,12 @@ export const requestHandlers = {
 		return loadSettingsFromDisk();
 	},
 	saveSettings: async (next) => {
-		return saveSettingsToDisk(next);
+		const current = await loadSettingsFromDisk();
+		const ok = await saveSettingsToDisk(next);
+		if (ok && current.claude.authMode !== next.claude.authMode) {
+			await invalidateModelsCache(next.claude.authMode);
+		}
+		return ok;
 	},
 	getProxyStatus: async () => {
 		return getProxyStatusFromModule();
@@ -564,8 +604,11 @@ export const requestHandlers = {
 		return { sessionId };
 	},
 	claudeResumeSession: async ({ sessionId }) => claudeResumeSession(sessionId),
-	claudeSendMessage: async ({ message }) => {
-		await claudeSendMessage(message);
+	claudeSendMessage: async ({ message, modelOverride }) => {
+		await claudeSendMessage(
+			message,
+			modelOverride ? { modelOverride } : undefined,
+		);
 	},
 	claudeStopGeneration: async () => claudeStopGeneration(),
 	claudeDeleteSession: async ({ sessionId }) => {
@@ -581,10 +624,50 @@ export const requestHandlers = {
 	claudeGetSessionMessages: async ({ sessionId }) =>
 		claudeGetSessionMessages(sessionId),
 	claudeGetAuthStatus: async () => getClaudeAuthStatus(),
-	claudeLoginSSO: async () => loginAnthropicSSO(),
-	claudeLogoutSSO: async () => logoutAnthropicSSO(),
-	claudeSetBedrock: async (config) => setBedrockConfig(config),
+	claudeLoginSSO: async () => {
+		const result = await loginAnthropicSSO();
+		if (result.ok) {
+			await invalidateModelsCache("anthropic");
+		}
+		return result;
+	},
+	claudeLogoutSSO: async () => {
+		const ok = await logoutAnthropicSSO();
+		if (ok) {
+			await invalidateModelsCache("anthropic");
+		}
+		return ok;
+	},
+	claudeSetBedrock: async (config) => {
+		const ok = await setBedrockConfig(config);
+		if (ok) {
+			await invalidateModelsCache("bedrock");
+		}
+		return ok;
+	},
 	claudeGetBedrock: async () => getBedrockConfig(),
+	claudeListSupportedModels: async () => {
+		const settings = await loadSettingsFromDisk();
+		const { authMode } = settings.claude;
+		const { getModels } = await import("./claude/models-cache");
+		const models = await getModels(authMode);
+		return { models, authMode };
+	},
+	claudeSetSessionModel: async ({ sessionId, model }) => {
+		const { setSessionModel } = await import("./claude/session-manager");
+		const result = await setSessionModel(sessionId, model);
+		if (result.ok) {
+			return { ok: true };
+		}
+		// Narrow the discriminated union for the schema's optional reason field.
+		return {
+			ok: false,
+			reason: result.reason as
+				| "session-not-found"
+				| "session-busy"
+				| "sdk-error",
+		};
+	},
 	claudeOpenChat: async ({ sessionId }) => {
 		console.log(
 			`[claude:rpc] claudeOpenChat: sessionId=${sessionId} hasCallback=${openChatCallback !== null}`,
@@ -651,6 +734,14 @@ export const chatRpc = buildRpc();
 // Wire the late-bound sessions pusher so handlers can push claudeSessionsUpdate
 // to the palette window. Done after `mainRpc` exists to avoid TDZ.
 setSessionsUpdatePusher((args) => mainRpc.send.claudeSessionsUpdate(args));
+
+// Wire the late-bound models invalidation pusher. Sends to both windows so
+// the settings panel (mainview) and the chat header (chatview) can refresh.
+setModelsInvalidatedPusher((authMode) => {
+	const event: AgentEvent = { type: "models-cache-invalidated", authMode };
+	mainRpc.send.agentEvent({ sessionId: "", event });
+	chatRpc.send.agentEvent({ sessionId: "", event });
+});
 
 // Wire the streaming sender so session-manager can push stream events to the
 // chat window specifically. Using chatRpc avoids the transport-swap problem
