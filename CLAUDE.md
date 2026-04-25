@@ -77,7 +77,7 @@ Handler families:
 - Proxy: `getProxyStatus`, `reloadProxyFromSystem`, `saveManualProxy`, `clearManualProxy`, `testProxyConnection`
 - Analytics: `trackAnalyticsEvent`, `setAnalyticsConsent`
 
-Webview-bound messages (bun → renderer): `openPreferences`, `claudeStreamChunk`, `claudeStreamEnd`, `claudeStreamError`, `claudeOpenSession`, `claudeSessionsUpdate`, `agentEvent` (typed event channel for the AI Elements UI).
+Webview-bound messages (bun → renderer): `openPreferences`, `claudeOpenSession`, `claudeSessionsUpdate`, `agentEvent` (typed event channel for the AI Elements chat UI — the sole stream). Text completion and errors ride on `agentEvent` (`finish` / `error` event types).
 
 ### Native layer
 
@@ -105,7 +105,9 @@ Build mode (rather than `vite dev`) keeps Electrobun's bundle copy rules working
 Built on `@anthropic-ai/claude-agent-sdk` (`unstable_v2_*` APIs).
 
 - **Session manager** (`session-manager.ts`) — owns the active SDK session, persists messages, and exposes `create`/`resume`/`send`/`stop`/`delete`/`list`/`getMessages`. Each session gets its own project directory (auto-provisioned, cwd is set to that directory) — workspace isolation is part of the safety model, not just an organization detail.
-- **Streaming** (`streaming.ts`) — pushes typed `AgentEvent`s (mapped by `event-mapper.ts` from raw `SDKMessage`s) and legacy `claudeStreamChunk`/`claudeStreamEnd` events to the chat window via `chatRpc`.
+- **Streaming** (`streaming.ts`) — pushes typed `AgentEvent`s (mapped by `event-mapper.ts` from raw `SDKMessage`s) to the chat window via `chatRpc`. The renderer consumes this single channel — no legacy chunk stream remains.
+- **Chat renderer entrypoint** — `src/chatview/App.tsx` renders `src/chatview/components/v2/chat-pane.tsx` (`ChatPaneV2`). The `v2/` folder name is historical (there is no v1 anymore); new chat UI work goes inside it. The state machine lives in `src/chatview/hooks/agent-state.ts`; the hook that wires it to the `agentEvent` stream is `hooks/use-agent-chat.ts`.
+- **agentEvent buffer** (`src/chatview/lib/agent-event-buffer.ts`) — the streaming loop starts before the chat window's React tree mounts; early `text-start`/`text-delta` events would be lost without this buffer, so every new subscriber first drains pending events. Change carefully; dedicated test suite in `agent-event-buffer.test.ts`.
 - **Permission gate** (`permission-gate.ts`) + **risk classifier** (`risk-classifier.ts`) — every `canUseTool` call creates a pending request; the renderer approves/rejects via `agentApproveTool`/`agentRejectTool`. Auto-whitelist for low-risk tools, session whitelist, audit log via `persistence/tool-decisions.ts`.
 - **Workspace jail** (`workspace-jail.ts`) — hard pre-check that rejects Write/Edit/NotebookEdit/Bash invocations whose target path escapes the project workspace, *before* the permission gate sees them. `cwd` alone is not sufficient — the SDK accepts absolute paths.
 - **MCP loader** (`mcp-loader.ts`) — runtime registry of MCP servers, persisted alongside settings, configurable via the **Plugins → Claude → MCP Servers** UI.
@@ -122,14 +124,14 @@ Built on `@anthropic-ai/claude-agent-sdk` (`unstable_v2_*` APIs).
 ### UI stack
 
 - shadcn/ui (New York style) — components in `src/components/ui/`
-- AI Elements primitives in `src/components/ai-elements/` (Conversation, Message, PromptInput, Reasoning, Sources, Artifact, CodeBlock, Confirmation, Attachments)
+- AI Elements primitives in `src/components/ai-elements/` (Conversation, Message, PromptInput, Reasoning, Sources, Artifact, CodeBlock, Confirmation, Attachments) — power the chat surface entirely
 - Radix UI primitives (Dialog, Popover, ScrollArea, Select, Separator, Slot, Switch, Tooltip, Collapsible)
 - cmdk for the command palette
 - Tailwind CSS 4 — config is **CSS-first** in `src/mainview/index.css` and `src/chatview/index.css` (`@import "tailwindcss" source(...)`, `@theme inline`, `@custom-variant dark`); there is no `tailwind.config.js`
 - `src/lib/utils.ts` exports `cn()` (clsx + tailwind-merge)
 - lucide-react for icons
 - @dnd-kit for drag-drop (plugin reordering, custom GitHub filters)
-- react-markdown + remark-gfm + react-syntax-highlighter for assistant message rendering
+- react-markdown + remark-gfm + react-syntax-highlighter render the assistant's markdown text — primitives in `src/chatview/components/markdown/` (`content.tsx` + `code-block.tsx`), consumed by `ChatPaneV2` via `components/v2/message-parts.tsx`
 
 ### Key config files
 
@@ -152,3 +154,4 @@ Built on `@anthropic-ai/claude-agent-sdk` (`unstable_v2_*` APIs).
 - Commit messages follow conventional commits: `type(scope): description` — semantic-release uses these to generate `CHANGELOG.md`
 - Skip lefthook once with `LEFTHOOK=0 git commit ...` if needed; don't commit with hooks bypassed by default
 - Workspace isolation is a security boundary, not a hint — when adding tools to the Claude integration, make sure paths stay inside the conversation's project directory
+- Settings schema tolerates unknown keys in the `claude` block — the validator in `src/bun/settings.ts` reads only known fields and re-serializes without extras. Retiring a setting is safe: users on older `settings.json` files won't hit validation errors, and their obsolete keys drop on the next save.

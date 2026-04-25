@@ -1,7 +1,6 @@
 /**
- * V2 chat pane composed from AI Elements primitives, backed by
- * `useAgentChat` and the typed agentEvent stream. Gated by the
- * `claude.useAiElements` setting — phase 5 retires the legacy pane.
+ * Chat pane composed from AI Elements primitives, backed by `useAgentChat`
+ * and the typed `agentEvent` stream. Default (and only) chat experience.
  */
 
 import { Paperclip, Sparkles } from "lucide-react";

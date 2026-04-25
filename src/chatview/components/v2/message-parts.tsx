@@ -4,7 +4,7 @@ import {
 	ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import type { AgentPart } from "../../hooks/agent-state";
-import { MarkdownContent } from "../blocks/markdown-content";
+import { MarkdownContent } from "../markdown/content";
 import { ToolBlock } from "./tool-block";
 
 export function MessagePart({ part }: { part: AgentPart }) {

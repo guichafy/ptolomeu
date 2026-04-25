@@ -195,9 +195,7 @@ let activeStreamingLoop: Promise<void> | null = null;
  * Falls back to no-op implementations so the module works stand-alone.
  */
 let sender: StreamMessageSender = {
-	sendChunk: () => {},
-	sendEnd: () => {},
-	sendError: () => {},
+	sendEvent: () => {},
 };
 
 /**

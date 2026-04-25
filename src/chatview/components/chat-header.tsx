@@ -1,7 +1,8 @@
 import { Bot } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { SessionState } from "../types";
+
+type SessionState = "idle" | "streaming" | "tool_running" | "error";
 
 interface ChatHeaderProps {
 	sessionId: string | null;

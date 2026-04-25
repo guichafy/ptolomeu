@@ -20,28 +20,11 @@ const verbose = (...args: unknown[]) => {
 // ---------------------------------------------------------------------------
 
 /**
- * Abstraction for pushing stream events to the renderer.
+ * Abstraction for pushing typed agent events to the renderer.
  * Injected so this module stays decoupled from the RPC layer.
  */
 export type StreamMessageSender = {
-	sendChunk: (sessionId: string, chunk: unknown) => void;
-	/**
-	 * Typed agent event channel. Runs in parallel with sendChunk while the
-	 * chat UI migrates to AI Elements. Defaults to no-op so older call sites
-	 * that only wire sendChunk keep working.
-	 */
-	sendEvent?: (sessionId: string, event: AgentEvent) => void;
-	sendEnd: (
-		sessionId: string,
-		result: {
-			subtype: string;
-			result?: string;
-			totalCostUsd?: number;
-			durationMs?: number;
-			usage?: { input: number; output: number };
-		},
-	) => void;
-	sendError: (sessionId: string, error: string) => void;
+	sendEvent: (sessionId: string, event: AgentEvent) => void;
 };
 
 /** A content block for persistence (mirrors StoredMessageV2 blocks). */
@@ -195,7 +178,7 @@ function extractToolResultsFromUserMessage(
  *
  * This function resolves when the stream ends (either by result or by the
  * generator returning). It rejects only on unexpected errors; normal SDK
- * errors (e.g. max turns) are forwarded via `sender.sendEnd`.
+ * errors (e.g. max turns) are forwarded as `agentEvent` `finish`/`error`.
  */
 export async function startStreamingLoop(
 	session: { stream(): AsyncGenerator<SDKMessage, void> },
@@ -218,7 +201,6 @@ export async function startStreamingLoop(
 	const mapperCtx: EventMapperContext = createEventMapperContext();
 
 	function pushAgentEvents(msg: SDKMessage): void {
-		if (!sender.sendEvent) return;
 		for (const event of buildAgentEvents(msg, mapperCtx)) {
 			sender.sendEvent(sessionId, event);
 		}
@@ -231,7 +213,6 @@ export async function startStreamingLoop(
 				`[claude:stream] chunk #${chunkCount}: sessionId=${sessionId} type=${msg.type}`,
 			);
 			pushAgentEvents(msg);
-			sender.sendChunk(sessionId, msg);
 
 			// Track thinking blocks from stream_event deltas.
 			// These may not appear in the complete assistant message.
@@ -356,8 +337,8 @@ export async function startStreamingLoop(
 					`[claude:stream] result: sessionId=${sessionId} subtype=${result.subtype} blocks=${accumulatedBlocks.length} cost=${meta.totalCostUsd ?? "?"} durationMs=${meta.durationMs ?? "?"} tokens=${meta.usage ? `${meta.usage.input}/${meta.usage.output}` : "?"}`,
 				);
 
-				// Persist BEFORE sendEnd so the frontend's loadMessages sees the
-				// new message if it re-reads during the onEnd handler.
+				// Persist BEFORE the `finish` agent event so the frontend's
+				// loadMessages sees the new message if it re-reads on finish.
 				if (accumulatedBlocks.length > 0) {
 					verbose(
 						`[claude:stream] persisting assistant message: sessionId=${sessionId} blocks=${accumulatedBlocks.length}`,
@@ -379,15 +360,6 @@ export async function startStreamingLoop(
 						meta,
 					);
 				}
-
-				verbose(`[claude:stream] sendEnd: sessionId=${sessionId}`);
-				sender.sendEnd(sessionId, {
-					subtype: result.subtype,
-					result: result.result,
-					totalCostUsd: meta.totalCostUsd,
-					durationMs: meta.durationMs,
-					usage: meta.usage,
-				});
 
 				accumulatedBlocks = [];
 				toolElapsed.clear();
@@ -422,6 +394,9 @@ export async function startStreamingLoop(
 			}
 		}
 
-		sender.sendError(sessionId, errorMessage);
+		sender.sendEvent(sessionId, {
+			type: "error",
+			error: { message: errorMessage, recoverable: false },
+		});
 	}
 }

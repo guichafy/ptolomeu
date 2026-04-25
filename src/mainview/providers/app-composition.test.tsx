@@ -17,7 +17,6 @@ const state = vi.hoisted(() => ({
 			authMode: "anthropic" | "bedrock";
 			model: string;
 			permissionMode: "dontAsk" | "acceptEdits" | "bypassPermissions" | "plan";
-			useAiElements: boolean;
 		};
 		proxy: { mode: "auto" | "system" | "env" | "none" | "manual" };
 	},
@@ -65,7 +64,6 @@ function defaultSettings() {
 			authMode: "anthropic" as const,
 			model: "claude-sonnet-4-6",
 			permissionMode: "acceptEdits" as const,
-			useAiElements: false,
 		},
 		proxy: { mode: "auto" as const },
 	};

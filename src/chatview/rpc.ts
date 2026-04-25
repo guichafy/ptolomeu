@@ -48,7 +48,6 @@ export interface ClaudeSettings {
 	authMode: ClaudeAuthMode;
 	model: string;
 	permissionMode: ClaudePermissionMode;
-	useAiElements: boolean;
 }
 
 export interface StoredMcpServer {
@@ -265,18 +264,6 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 		requests: {};
 		messages: {
 			openPreferences: { section?: SettingsSection };
-			claudeStreamChunk: { sessionId: string; chunk: unknown };
-			claudeStreamEnd: {
-				sessionId: string;
-				result: {
-					subtype: string;
-					result?: string;
-					totalCostUsd?: number;
-					durationMs?: number;
-					usage?: { input: number; output: number };
-				};
-			};
-			claudeStreamError: { sessionId: string; error: string };
 			claudeOpenSession: { sessionId: string };
 			agentEvent: { sessionId: string; event: AgentEvent };
 		};
@@ -291,25 +278,6 @@ let openSessionHandler: ((args: { sessionId: string }) => void) | null = null;
 // webview's JS has fully loaded. We deliver the buffered args as soon as a
 // handler is registered.
 let pendingOpenSession: { sessionId: string } | null = null;
-
-let streamChunkHandler:
-	| ((args: { sessionId: string; chunk: unknown }) => void)
-	| null = null;
-let streamEndHandler:
-	| ((args: {
-			sessionId: string;
-			result: {
-				subtype: string;
-				result?: string;
-				totalCostUsd?: number;
-				durationMs?: number;
-				usage?: { input: number; output: number };
-			};
-	  }) => void)
-	| null = null;
-let streamErrorHandler:
-	| ((args: { sessionId: string; error: string }) => void)
-	| null = null;
 
 // Typed agent-event channel. Subscribers see every event the backend emits for
 // any session; filter by sessionId downstream. Events received before the first
@@ -327,52 +295,11 @@ export function onAgentEvent(listener: AgentEventListener): () => void {
 	return agentEventBuffer.subscribe(listener);
 }
 
-export function setStreamHandlers(handlers: {
-	onChunk: (args: { sessionId: string; chunk: unknown }) => void;
-	onEnd: (args: {
-		sessionId: string;
-		result: {
-			subtype: string;
-			result?: string;
-			totalCostUsd?: number;
-			durationMs?: number;
-			usage?: { input: number; output: number };
-		};
-	}) => void;
-	onError: (args: { sessionId: string; error: string }) => void;
-}) {
-	streamChunkHandler = handlers.onChunk;
-	streamEndHandler = handlers.onEnd;
-	streamErrorHandler = handlers.onError;
-}
-
 const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 	maxRequestTime: 60_000,
 	handlers: {
 		messages: {
 			openPreferences: () => {},
-			claudeStreamChunk: (args) => {
-				const chunkType =
-					args.chunk && typeof args.chunk === "object" && "type" in args.chunk
-						? (args.chunk as { type: unknown }).type
-						: "unknown";
-				verbose(
-					`[chat:rpc] chunk: sessionId=${args.sessionId} type=${String(chunkType)}`,
-				);
-				streamChunkHandler?.(args);
-			},
-			claudeStreamEnd: (args) => {
-				console.log(
-					`[chat:rpc] end: sessionId=${args.sessionId} subtype=${args.result.subtype}`,
-				);
-				streamEndHandler?.(args);
-			},
-			claudeStreamError: (args) => {
-				console.error(
-					`[chat:rpc] error: sessionId=${args.sessionId} error=${args.error}`,
-				);
-				streamErrorHandler?.(args);
-			},
 			claudeOpenSession: (args) => {
 				console.log(`[chat:rpc] openSession: sessionId=${args.sessionId}`);
 				if (openSessionHandler) {

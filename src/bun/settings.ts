@@ -52,12 +52,6 @@ export interface ClaudeSettings {
 	authMode: ClaudeAuthMode;
 	model: string;
 	permissionMode: ClaudePermissionMode;
-	/**
-	 * When true, the chat window renders the AI Elements-based UI powered by
-	 * the typed agentEvent stream. Default false keeps the legacy accumulator
-	 * view during migration (phases 3 and 4 of plan 2026-04-23).
-	 */
-	useAiElements: boolean;
 }
 
 export type ProxyMode = "auto" | "system" | "env" | "none" | "manual";
@@ -108,7 +102,6 @@ export const DEFAULT_CLAUDE_SETTINGS: ClaudeSettings = {
 	authMode: "anthropic",
 	model: "claude-sonnet-4-6",
 	permissionMode: "acceptEdits",
-	useAiElements: false,
 };
 
 export const DEFAULT_PROXY_SETTINGS: ProxySettings = {
@@ -294,19 +287,13 @@ export function validateSettings(value: unknown): ValidateResult {
 		)
 	) {
 		const c = rawClaude as Record<string, unknown>;
-		// `useAiElements` was added in phase 3 of the Agent SDK integration.
-		// Existing settings files predate it — treat anything non-boolean as
-		// the default (false) rather than invalidating the whole claude block.
-		const rawUseAi = c.useAiElements;
-		const useAiElements =
-			typeof rawUseAi === "boolean"
-				? rawUseAi
-				: DEFAULT_CLAUDE_SETTINGS.useAiElements;
+		// Older settings files may include additional fields (e.g. the retired
+		// `useAiElements` flag). Read only the known ones — unknown keys are
+		// dropped on the next save without invalidating the claude block.
 		claude = {
 			authMode: c.authMode as ClaudeAuthMode,
 			model: c.model as string,
 			permissionMode: c.permissionMode as ClaudePermissionMode,
-			useAiElements,
 		};
 	} else {
 		claude = { ...DEFAULT_CLAUDE_SETTINGS };

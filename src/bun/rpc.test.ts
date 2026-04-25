@@ -96,9 +96,6 @@ vi.mock("./keychain", () => ({
 // importing rpc.ts doesn't crash on `mainRpc.send.claudeSessionsUpdate`.
 const fakeSend = {
 	claudeSessionsUpdate: vi.fn(),
-	claudeStreamChunk: vi.fn(),
-	claudeStreamEnd: vi.fn(),
-	claudeStreamError: vi.fn(),
 	agentEvent: vi.fn(),
 	openPreferences: vi.fn(),
 	claudeOpenSession: vi.fn(),
@@ -271,7 +268,6 @@ describe("rpc.requestHandlers", () => {
 					authMode: "anthropic",
 					model: "x",
 					permissionMode: "acceptEdits",
-					useAiElements: false,
 				},
 				proxy: { mode: "auto" },
 			});
@@ -318,7 +314,6 @@ describe("rpc.requestHandlers", () => {
 					authMode: "anthropic",
 					model: "x",
 					permissionMode: "acceptEdits",
-					useAiElements: false,
 				},
 				proxy: { mode: "auto" },
 			});
@@ -350,7 +345,6 @@ describe("rpc.requestHandlers", () => {
 					authMode: "anthropic",
 					model: "x",
 					permissionMode: "acceptEdits",
-					useAiElements: false,
 				},
 				proxy: {
 					mode: "manual",
@@ -408,7 +402,6 @@ describe("rpc.requestHandlers", () => {
 					authMode: "anthropic",
 					model: "x",
 					permissionMode: "acceptEdits",
-					useAiElements: false,
 				},
 				proxy: { mode: "auto" },
 			});
@@ -437,7 +430,6 @@ describe("rpc.requestHandlers", () => {
 					authMode: "anthropic",
 					model: "x",
 					permissionMode: "acceptEdits",
-					useAiElements: false,
 				},
 				proxy: { mode: "auto" },
 			});

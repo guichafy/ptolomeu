@@ -146,7 +146,6 @@ describe("settings I/O", () => {
 				authMode: "anthropic",
 				model: "m",
 				permissionMode: "acceptEdits",
-				useAiElements: false,
 			},
 			proxy: { mode: "auto" },
 		} as unknown as Parameters<typeof saveSettings>[0];
@@ -157,18 +156,27 @@ describe("settings I/O", () => {
 		expect(after).toBe(before);
 	});
 
-	it("retains useAiElements through save → load", async () => {
+	it("drops unknown legacy claude fields on save → load round-trip", async () => {
 		const { loadSettings, saveSettings } = await import("./settings");
 		const initial = await loadSettings();
 
+		// Settings files written before `useAiElements` was retired may still
+		// carry the key. Confirm the loader silently ignores it without
+		// invalidating the claude block.
 		const mutated = {
 			...initial,
-			claude: { ...initial.claude, useAiElements: true },
+			claude: {
+				...initial.claude,
+				useAiElements: true,
+			} as unknown as typeof initial.claude,
 		};
 		expect(await saveSettings(mutated)).toBe(true);
 
 		const reloaded = await loadSettings();
-		expect(reloaded.claude.useAiElements).toBe(true);
+		expect(
+			(reloaded.claude as unknown as Record<string, unknown>).useAiElements,
+		).toBe(undefined);
+		expect(reloaded.claude.permissionMode).toBe("acceptEdits");
 	});
 
 	it("does NOT persist password value to disk in manual proxy config", async () => {
