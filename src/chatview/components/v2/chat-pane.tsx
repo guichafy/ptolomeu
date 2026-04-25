@@ -22,6 +22,7 @@ import {
 	PromptInputToolbar,
 } from "@/components/ai-elements/prompt-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
+import { ModelPicker } from "@/components/claude/model-picker";
 import { Button } from "@/components/ui/button";
 import type { ProtocolModelInfo } from "@/shared/agent-protocol";
 import {
@@ -104,6 +105,7 @@ export function ChatPaneV2() {
 	const [draft, setDraft] = useState("");
 	const [attachments, setAttachments] = useState<Attachment[]>([]);
 	const [models, setModels] = useState<ProtocolModelInfo[]>([]);
+	const [overrideModel, setOverrideModel] = useState<string | null>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
@@ -152,7 +154,9 @@ export function ChatPaneV2() {
 				: "";
 		setDraft("");
 		setAttachments([]);
-		await sendMessage(`${prefix}${text}`);
+		const overrideForTurn = overrideModel ?? undefined;
+		setOverrideModel(null); // reset BEFORE the await so the user sees the picker reset immediately
+		await sendMessage(`${prefix}${text}`, { modelOverride: overrideForTurn });
 	};
 
 	const handleFilesSelected = async (files: FileList | null) => {
@@ -228,6 +232,17 @@ export function ChatPaneV2() {
 						disabled={state.sessionState === "error"}
 					/>
 					<PromptInputToolbar>
+						<ModelPicker
+							variant="turn-override"
+							value={overrideModel ?? state.sessionModel}
+							sessionDefault={state.sessionModel}
+							models={models}
+							onChange={(v) =>
+								setOverrideModel(v === state.sessionModel ? null : v)
+							}
+							disabled={state.sessionState !== "idle"}
+							placeholder="Modelo do turno"
+						/>
 						<input
 							ref={fileInputRef}
 							type="file"
