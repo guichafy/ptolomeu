@@ -177,6 +177,8 @@ export interface StoredMessage {
 	cost?: number;
 	durationMs?: number;
 	tokenUsage?: { input: number; output: number };
+	/** Set when a per-turn model override was used for a user message. */
+	modelUsed?: string;
 }
 
 interface PtolomeuRPCSchema extends ElectrobunRPCSchema {

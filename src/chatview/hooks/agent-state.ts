@@ -51,6 +51,8 @@ export interface AgentMessage {
 	role: "assistant" | "user";
 	parts: AgentPart[];
 	createdAt: number;
+	/** Set when this user message used a per-turn model override. */
+	modelUsed?: string;
 }
 
 export interface PendingPermission {
@@ -441,6 +443,7 @@ export function storedToAgentMessage(
 		role: stored.role,
 		parts,
 		createdAt: Date.parse(stored.timestamp) || 0,
+		...(stored.modelUsed && { modelUsed: stored.modelUsed }),
 	};
 }
 
@@ -544,6 +547,7 @@ export function appendUserMessage(
 	state: AgentState,
 	id: string,
 	text: string,
+	modelUsed?: string,
 ): AgentState {
 	return {
 		...state,
@@ -562,6 +566,7 @@ export function appendUserMessage(
 					},
 				],
 				createdAt: Date.now(),
+				...(modelUsed && { modelUsed }),
 			},
 		],
 	};

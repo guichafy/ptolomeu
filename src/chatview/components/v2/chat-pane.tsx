@@ -68,13 +68,28 @@ function partKey(
 	}
 }
 
-function AgentMessageView({ message }: { message: AgentMessageType }) {
+function AgentMessageView({
+	message,
+	models,
+}: {
+	message: AgentMessageType;
+	models: ProtocolModelInfo[];
+}) {
+	const modelLabel = message.modelUsed
+		? (models.find((m) => m.value === message.modelUsed)?.displayName ??
+			message.modelUsed)
+		: null;
 	return (
 		<Message from={message.role}>
 			<MessageContent role={message.role}>
 				{message.parts.map((part) => (
 					<MessagePartRenderer key={partKey(message, part)} part={part} />
 				))}
+				{modelLabel && (
+					<span className="mt-1 inline-flex rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+						Modelo: {modelLabel}
+					</span>
+				)}
 			</MessageContent>
 		</Message>
 	);
@@ -196,7 +211,11 @@ export function ChatPaneV2() {
 						</p>
 					)}
 					{messages.map((message) => (
-						<AgentMessageView key={message.id} message={message} />
+						<AgentMessageView
+							key={message.id}
+							message={message}
+							models={models}
+						/>
 					))}
 					<TurnIndicator
 						status={turnStatus.status}
