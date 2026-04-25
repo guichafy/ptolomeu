@@ -20,7 +20,7 @@ type Action =
 			sessionId: string;
 			event: import("@/shared/agent-protocol").AgentEvent;
 	  }
-	| { type: "optimistic-user"; id: string; text: string }
+	| { type: "optimistic-user"; id: string; text: string; modelUsed?: string }
 	| { type: "resolve-permission"; permissionId: string }
 	| { type: "hydrate"; messages: AgentMessage[] }
 	| { type: "set-session-model"; model: string | null }
@@ -35,7 +35,9 @@ function reducer(state: AgentState, action: Action): AgentState {
 			// Mark the turn as in-flight so the TurnIndicator flips to
 			// "waiting" immediately, without waiting for the first
 			// session-state-change event from the backend.
-			return markTurnStart(appendUserMessage(state, action.id, action.text));
+			return markTurnStart(
+				appendUserMessage(state, action.id, action.text, action.modelUsed),
+			);
 		case "resolve-permission":
 			return resolvePermission(state, action.permissionId);
 		case "hydrate": {
@@ -131,7 +133,12 @@ export function useAgentChat(sessionId: string | null): UseAgentChatResult {
 		async (text: string, opts: { modelOverride?: string } = {}) => {
 			if (!text.trim()) return;
 			const id = `user-${Date.now()}`;
-			dispatch({ type: "optimistic-user", id, text });
+			dispatch({
+				type: "optimistic-user",
+				id,
+				text,
+				modelUsed: opts.modelOverride,
+			});
 			try {
 				await rpc.request.claudeSendMessage({
 					message: text,
