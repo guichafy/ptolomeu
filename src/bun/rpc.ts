@@ -2,13 +2,16 @@ import { readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { defineElectrobunRPC, type ElectrobunRPCSchema } from "electrobun/bun";
-import {
-	type AgentEvent,
-	type ApproveBehavior,
-	BROADCAST_SESSION_ID,
-	type ClaudeAuthMode,
-	type ProtocolModelInfo,
-} from "@/shared/agent-protocol";
+import type {
+	AgentEvent,
+	ApproveBehavior,
+	ClaudeAuthMode,
+	ProtocolModelInfo,
+} from "../shared/agent-protocol";
+// Value import (not type-only) — keep the path relative so Bun's bundler can
+// resolve it without the tsconfig `@/*` alias. Other bun-side imports of
+// `@/shared/...` survive only because they're type-only and get erased.
+import { BROADCAST_SESSION_ID } from "../shared/agent-protocol";
 import { setAnalyticsEnabled, trackEvent } from "./analytics";
 import {
 	type BedrockConfig,
