@@ -50,7 +50,6 @@ export function createMessageInbox(): MessageInbox {
 					});
 				},
 				return() {
-					close();
 					return Promise.resolve({ value: undefined as never, done: true });
 				},
 			};
