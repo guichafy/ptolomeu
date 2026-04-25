@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClaudeSection } from "./claude-section";
 
@@ -75,6 +75,32 @@ describe("ClaudeSection — auth states", () => {
 			await screen.findByRole("button", {
 				name: /Abrir Claude Code para conectar/i,
 			}),
+		).toBeInTheDocument();
+	});
+
+	it("shows error and resets loading state when install fails", async () => {
+		claudeGetAuthStatusMock.mockResolvedValue({
+			mode: "none",
+			anthropic: { cliStatus: "not-installed" },
+		});
+		claudeInstallCliMock.mockResolvedValue({
+			ok: false,
+			error: "Falha ao abrir o Terminal",
+		});
+
+		render(<ClaudeSection />);
+		const btn = await screen.findByRole("button", {
+			name: /Instalar Claude Code/i,
+		});
+		fireEvent.click(btn);
+
+		await waitFor(() => expect(claudeInstallCliMock).toHaveBeenCalledTimes(1));
+		expect(
+			await screen.findByText("Falha ao abrir o Terminal"),
+		).toBeInTheDocument();
+		// button is no longer in loading state — text is back
+		expect(
+			screen.getByRole("button", { name: /Instalar Claude Code/i }),
 		).toBeInTheDocument();
 	});
 
