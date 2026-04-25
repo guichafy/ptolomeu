@@ -53,6 +53,7 @@ export default defineConfig({
 					include: [
 						"src/mainview/**/*.test.{ts,tsx}",
 						"src/chatview/components/**/*.test.{ts,tsx}",
+						"src/components/**/*.test.{ts,tsx}",
 						"src/lib/**/*.test.{ts,tsx}",
 					],
 					setupFiles: ["src/mainview/vitest.setup.ts"],

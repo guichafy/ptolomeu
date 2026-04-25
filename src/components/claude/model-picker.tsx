@@ -1,0 +1,131 @@
+import { X } from "lucide-react";
+import { useState } from "react";
+import {
+	ModelSelector,
+	ModelSelectorContent,
+	ModelSelectorEmpty,
+	ModelSelectorGroup,
+	ModelSelectorInput,
+	ModelSelectorItem,
+	ModelSelectorList,
+	ModelSelectorTrigger,
+} from "@/components/ai-elements/model-selector";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import type { ProtocolModelInfo } from "@/shared/agent-protocol";
+
+export type ModelPickerVariant = "session" | "turn-override" | "default";
+
+export interface ModelPickerProps {
+	variant: ModelPickerVariant;
+	value: string | null;
+	models: ProtocolModelInfo[];
+	onChange: (value: string) => void;
+	disabled?: boolean;
+	placeholder?: string;
+	/**
+	 * For variant "turn-override": shows a ✕ to clear the override and revert
+	 * to the session default. Pass the session's default model id; when value
+	 * differs from sessionDefault, the picker is rendering an override.
+	 */
+	sessionDefault?: string | null;
+}
+
+export function ModelPicker({
+	variant,
+	value,
+	models,
+	onChange,
+	disabled,
+	placeholder = "Selecionar modelo",
+	sessionDefault,
+}: ModelPickerProps) {
+	const [open, setOpen] = useState(false);
+
+	if (models.length === 0) {
+		return (
+			<Button
+				type="button"
+				size="sm"
+				variant="ghost"
+				disabled
+				className={cn("text-xs", variant === "session" && "h-6 px-2")}
+				aria-label={placeholder}
+			>
+				Carregando modelos...
+			</Button>
+		);
+	}
+
+	const current = models.find((m) => m.value === value) ?? null;
+	const showClear =
+		variant === "turn-override" && value != null && value !== sessionDefault;
+	const triggerLabel = current?.displayName ?? value ?? placeholder;
+
+	const handleSelect = (modelValue: string) => {
+		onChange(modelValue);
+		setOpen(false);
+	};
+
+	const triggerSizing =
+		variant === "session"
+			? "h-6 px-2 py-0 text-xs"
+			: variant === "turn-override"
+				? "h-7 px-2 py-0 text-xs"
+				: "h-8 px-3 text-sm";
+
+	return (
+		<div className="flex items-center gap-1">
+			<ModelSelector open={open} onOpenChange={setOpen}>
+				<ModelSelectorTrigger asChild>
+					<Button
+						type="button"
+						variant={variant === "default" ? "outline" : "ghost"}
+						disabled={disabled}
+						className={cn(triggerSizing)}
+						aria-label={placeholder}
+					>
+						{triggerLabel}
+					</Button>
+				</ModelSelectorTrigger>
+				<ModelSelectorContent title={placeholder}>
+					<ModelSelectorInput placeholder="Buscar modelo..." />
+					<ModelSelectorList>
+						<ModelSelectorEmpty>Nenhum modelo encontrado</ModelSelectorEmpty>
+						<ModelSelectorGroup>
+							{models.map((m) => (
+								<ModelSelectorItem
+									key={m.value}
+									value={m.value}
+									keywords={[m.displayName, m.description]}
+									onSelect={() => handleSelect(m.value)}
+								>
+									<div className="flex flex-col">
+										<span className="font-medium">{m.displayName}</span>
+										{m.description && (
+											<span className="text-[10px] text-muted-foreground">
+												{m.description}
+											</span>
+										)}
+									</div>
+								</ModelSelectorItem>
+							))}
+						</ModelSelectorGroup>
+					</ModelSelectorList>
+				</ModelSelectorContent>
+			</ModelSelector>
+			{showClear && sessionDefault && (
+				<Button
+					type="button"
+					size="sm"
+					variant="ghost"
+					onClick={() => onChange(sessionDefault)}
+					className="h-6 w-6 p-0 text-muted-foreground"
+					aria-label="Voltar ao modelo da sessão"
+				>
+					<X className="h-3 w-3" />
+				</Button>
+			)}
+		</div>
+	);
+}
