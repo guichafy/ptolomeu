@@ -259,7 +259,7 @@ export function ChatPaneV2() {
 							onChange={(v) =>
 								setOverrideModel(v === state.sessionModel ? null : v)
 							}
-							disabled={state.sessionState !== "idle"}
+							disabled={state.sessionState !== "idle" || !sessionId}
 							placeholder="Modelo do turno"
 						/>
 						<input

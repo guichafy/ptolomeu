@@ -84,6 +84,9 @@ export async function getModels(
  * Default discovery: spin up a minimal `query()` whose prompt iterable never
  * yields, read `initializationResult` to extract the model list, then close.
  * No SDK message is sent, so there is no inference cost.
+ *
+ * NOTE: uses `settings.claude.authMode` implicitly; callers must use
+ * `getModels` with the same authMode they expect to discover under.
  */
 async function discoverModels(): Promise<ModelInfo[]> {
 	const settings = await loadSettings();
