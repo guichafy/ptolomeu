@@ -1,3 +1,43 @@
+# [0.9.0](https://github.com/guichafy/ptolomeu/compare/v0.8.0...v0.9.0) (2026-04-25)
+
+
+### Bug Fixes
+
+* **claude:** capture SDK session id from first message in streaming loop ([11e0705](https://github.com/guichafy/ptolomeu/commit/11e0705c59042c2a248f0f48e1cb7b5c0ea69665))
+* **claude:** clarify session options JSDoc and lock omit-when-absent contract ([161d897](https://github.com/guichafy/ptolomeu/commit/161d897a3bc92fd55e19a7efca4dd1e44aba7f51))
+* **claude:** close prior session resources and snapshot active in sendMessage ([93a9e5f](https://github.com/guichafy/ptolomeu/commit/93a9e5fef1702058957025da8ec11c64b8c71d17))
+* **claude:** dedup thinking blocks across stream deltas and assistant chunks ([f3f3405](https://github.com/guichafy/ptolomeu/commit/f3f340552a59615c0b89c99370fb2a09b49716da))
+* **claude:** drain restore callbacks on stopGeneration; tighten resume + toolbar guards ([4183593](https://github.com/guichafy/ptolomeu/commit/4183593f2c1e08eb86fbb6932edc69001d9bdd4e))
+* **claude:** guard models-cache against stale invalidations and authMode drift ([6375967](https://github.com/guichafy/ptolomeu/commit/63759677573e3e37e0412c3a467490e6a246ea44))
+* **claude:** inbox iterator return() does not seal shared state ([65ece53](https://github.com/guichafy/ptolomeu/commit/65ece53810ea0484bf2142f30adf2595d9ebf6b5))
+* **claude:** isolate onTurnComplete hook errors and document streaming hooks ([6ffa740](https://github.com/guichafy/ptolomeu/commit/6ffa7406eb0398d9d9feb17451172d3628815ef4))
+* **claude:** latch sdkSessionId flag before firing hook ([d27691d](https://github.com/guichafy/ptolomeu/commit/d27691d5d15a40cc1958da93c2460b4719a3b515))
+* **rpc:** full models-cache flush on auth changes and broadcast-id sentinel ([7a7503e](https://github.com/guichafy/ptolomeu/commit/7a7503ebe7c528de269f1ee942046689f4240b49))
+* **rpc:** sync ClaudeAuthStatus mirror types with backend cliStatus shape ([e1a40a0](https://github.com/guichafy/ptolomeu/commit/e1a40a09a8566acf8b67ab770b638a04d01f0fa7))
+* **rpc:** use relative import for value import to satisfy Bun bundler ([0a353ef](https://github.com/guichafy/ptolomeu/commit/0a353ef5a3ab227407d70ea81c0e9e5949c7a56e))
+* **settings:** clear pendingMessage on action click and test install error path ([81d5494](https://github.com/guichafy/ptolomeu/commit/81d5494f23feb48daa25f0ca38a4010d0aacb752))
+
+
+### Features
+
+* **chat:** per-turn model override in prompt toolbar ([6760471](https://github.com/guichafy/ptolomeu/commit/67604714a796a055574cd8f5c604737f9a1212af))
+* **chat:** persist and surface per-turn model override on user messages ([4b38b4f](https://github.com/guichafy/ptolomeu/commit/4b38b4f10eaa552bb826845eaf559b6005d97b6c))
+* **chat:** session-level model picker in ChatHeader ([258b55f](https://github.com/guichafy/ptolomeu/commit/258b55fb20006ae5d1c172623dea7080254d8772))
+* **claude/auth:** add Claude CLI and Keychain detection helpers ([2cf6c68](https://github.com/guichafy/ptolomeu/commit/2cf6c685225c7d36e500b1bb30fd73b0f95edf2d))
+* **claude/auth:** delegate install and login to Terminal via osascript ([549f33f](https://github.com/guichafy/ptolomeu/commit/549f33f62abaf864d6f1fe90e5cfbb278d869093))
+* **claude:** add push-able message inbox helper for stable query() ([ca90154](https://github.com/guichafy/ptolomeu/commit/ca9015484c3b75feb01828e7c1616f4e73337afc))
+* **claude:** models cache with single-flight discovery via stable query() ([f7aa67e](https://github.com/guichafy/ptolomeu/commit/f7aa67e6691f84316c5790df5cc74612418b7855))
+* enhance PaletteContent for improved window resizing and loading state management ([c9f185f](https://github.com/guichafy/ptolomeu/commit/c9f185f842e5600a87b5a1df2f855bc66e1597f7))
+* **mainview:** subscribe settings to models-cache-invalidated events ([6a32bdb](https://github.com/guichafy/ptolomeu/commit/6a32bdb4a9cd1e24d0b7f6afe2a70ff19012a136))
+* **rpc:** expose model selector RPCs and cache invalidation events ([5887057](https://github.com/guichafy/ptolomeu/commit/5887057f18a5bed0f20eed3f948402da3820b6c3))
+* **rpc:** rename claudeLoginSSO to claudeOpenLogin and add claudeInstallCli ([77872bc](https://github.com/guichafy/ptolomeu/commit/77872bc4023242283d62cc58a1cec5d540539521))
+* **settings:** drive Claude model dropdown from SDK-supplied list ([95d4c36](https://github.com/guichafy/ptolomeu/commit/95d4c369d7db229b5c43889bd8c49ff563d84ff8))
+* **settings:** poll Claude auth status after action and refresh on dialog open ([d9b9aa4](https://github.com/guichafy/ptolomeu/commit/d9b9aa4a7eaac3f2b40a90c3f54515756672f266))
+* **settings:** show three-state Claude auth panel driven by CLI status ([8dc8860](https://github.com/guichafy/ptolomeu/commit/8dc8860e9a81b5acb0ab4be952f14030acf5c3c6))
+* **tray:** rebrand icons and tighten menu bar slot ([a4cea65](https://github.com/guichafy/ptolomeu/commit/a4cea65a8bbb7dcd9b563f8b6db1e84340750df3))
+* **ui:** ModelPicker wrapper around ai-elements/model-selector ([d9bff8e](https://github.com/guichafy/ptolomeu/commit/d9bff8ee753944a802f3ae9615bfe1ed6a177157))
+* update UI components for improved styling and accessibility ([dd7aa91](https://github.com/guichafy/ptolomeu/commit/dd7aa9184b2260edc37a6743f67c5e77be024c8b))
+
 # [0.8.0](https://github.com/guichafy/ptolomeu/compare/v0.7.0...v0.8.0) (2026-04-24)
 
 
