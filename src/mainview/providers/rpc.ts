@@ -1,4 +1,5 @@
 import { type ElectrobunRPCSchema, Electroview } from "electrobun/view";
+import type { AgentEvent } from "@/shared/agent-protocol";
 
 export type GitHubSearchType = "repos" | "code" | "issues" | "users";
 
@@ -345,6 +346,7 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeStreamError: { sessionId: string; error: string };
 			claudeOpenSession: { sessionId: string };
 			claudeSessionsUpdate: { sessions: SessionMeta[] };
+			agentEvent: { sessionId: string; event: AgentEvent };
 		};
 	};
 }
@@ -357,6 +359,18 @@ export function setOpenPreferencesHandler(
 	handler: ((args: { section?: SettingsSection }) => void) | null,
 ) {
 	openPreferencesHandler = handler;
+}
+
+type AgentEventArgs = { sessionId: string; event: AgentEvent };
+type AgentEventListener = (args: AgentEventArgs) => void;
+
+const agentEventListeners = new Set<AgentEventListener>();
+
+export function onAgentEvent(listener: AgentEventListener): () => void {
+	agentEventListeners.add(listener);
+	return () => {
+		agentEventListeners.delete(listener);
+	};
 }
 
 let claudeSessionsUpdateHandler:
@@ -397,6 +411,15 @@ const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 					claudeSessionsUpdateHandler(args);
 				} else {
 					pendingClaudeSessionsUpdate = args;
+				}
+			},
+			agentEvent: (args) => {
+				for (const listener of agentEventListeners) {
+					try {
+						listener(args);
+					} catch (err) {
+						console.error("[mainview:rpc] agentEvent listener threw:", err);
+					}
 				}
 			},
 		},
