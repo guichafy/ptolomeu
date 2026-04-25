@@ -35,6 +35,9 @@ export function ClaudeSection() {
 	>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
 	const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+	const [pollingMode, setPollingMode] = useState<"install" | "login" | null>(
+		null,
+	);
 
 	// Auth mode toggle (local, synced to settings)
 	const [authMode, setAuthMode] = useState<ClaudeAuthMode>(
@@ -132,8 +135,8 @@ export function ClaudeSection() {
 
 	// Polling: after Install or Login, poll until status transitions
 	useEffect(() => {
-		if (!pendingMessage) return;
-		const isInstall = pendingMessage.includes("Instalando");
+		if (!pollingMode) return;
+		const isInstall = pollingMode === "install";
 		const intervalMs = isInstall ? 5000 : 3000;
 		const timeoutMs = isInstall ? 5 * 60 * 1000 : 2 * 60 * 1000;
 		const start = Date.now();
@@ -141,23 +144,24 @@ export function ClaudeSection() {
 		const id = setInterval(async () => {
 			if (Date.now() - start > timeoutMs) {
 				setPendingMessage(null);
+				setPollingMode(null);
 				clearInterval(id);
 				return;
 			}
 			const status = await rpc.request.claudeGetAuthStatus();
 			setAuthStatus(status);
-			if (
-				isInstall
-					? status.anthropic?.cliStatus !== "not-installed"
-					: status.anthropic?.cliStatus === "authenticated"
-			) {
+			const done = isInstall
+				? status.anthropic?.cliStatus !== "not-installed"
+				: status.anthropic?.cliStatus === "authenticated";
+			if (done) {
 				setPendingMessage(null);
+				setPollingMode(null);
 				clearInterval(id);
 			}
 		}, intervalMs);
 
 		return () => clearInterval(id);
-	}, [pendingMessage]);
+	}, [pollingMode]);
 
 	// Refresh auth when the dialog transitions from closed → open
 	const prevOpenRef = useRef(isOpen);
@@ -196,6 +200,7 @@ export function ClaudeSection() {
 	async function handleInstallCli() {
 		setActionError(null);
 		setPendingMessage(null);
+		setPollingMode(null);
 		setActionLoading("install");
 		try {
 			const result = await rpc.request.claudeInstallCli();
@@ -204,6 +209,7 @@ export function ClaudeSection() {
 				return;
 			}
 			setPendingMessage("Instalando no Terminal aberto...");
+			setPollingMode("install");
 		} finally {
 			setActionLoading(null);
 		}
@@ -212,6 +218,7 @@ export function ClaudeSection() {
 	async function handleOpenLogin() {
 		setActionError(null);
 		setPendingMessage(null);
+		setPollingMode(null);
 		setActionLoading("login");
 		try {
 			const result = await rpc.request.claudeOpenLogin();
@@ -220,6 +227,7 @@ export function ClaudeSection() {
 				return;
 			}
 			setPendingMessage("Conclua o login no Terminal aberto.");
+			setPollingMode("login");
 		} finally {
 			setActionLoading(null);
 		}

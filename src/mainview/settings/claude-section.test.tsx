@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClaudeSection } from "./claude-section";
 
@@ -124,7 +130,6 @@ describe("ClaudeSection — auth states", () => {
 
 describe("ClaudeSection — polling", () => {
 	it("polls until cliStatus transitions to authenticated after login click", async () => {
-		vi.useFakeTimers({ shouldAdvanceTime: true });
 		claudeGetAuthStatusMock
 			.mockResolvedValueOnce({
 				mode: "none",
@@ -141,16 +146,34 @@ describe("ClaudeSection — polling", () => {
 		claudeOpenLoginMock.mockResolvedValue({ ok: true });
 
 		render(<ClaudeSection />);
+
+		// Wait for initial auth to settle with real timers
 		const btn = await screen.findByRole("button", {
 			name: /Abrir Claude Code para conectar/i,
 		});
-		fireEvent.click(btn);
-		await waitFor(() => expect(claudeOpenLoginMock).toHaveBeenCalled());
 
-		// advance 3s — first poll
-		await vi.advanceTimersByTimeAsync(3000);
-		// advance 3s — second poll, should now be authenticated
-		await vi.advanceTimersByTimeAsync(3000);
+		// Switch to fake timers after component has rendered
+		vi.useFakeTimers();
+
+		fireEvent.click(btn);
+
+		// Let claudeOpenLogin resolve and pollingMode be set
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		// advance 3s — first poll (not-authenticated)
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(3000);
+		});
+
+		// advance 3s — second poll (authenticated)
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(3000);
+		});
+
+		// restore real timers before waitFor
+		vi.useRealTimers();
 
 		await waitFor(() =>
 			expect(
