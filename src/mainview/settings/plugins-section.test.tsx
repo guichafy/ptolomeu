@@ -42,7 +42,7 @@ describe("<PluginsSection />", () => {
 		expect(screen.getByText("Disponíveis")).toBeInTheDocument();
 		// web + claude are not in enabledOrder, so they should show as available
 		expect(screen.getByText("Busca Web")).toBeInTheDocument();
-		expect(screen.getByText("Claude")).toBeInTheDocument();
+		expect(screen.getByText("Claude Code")).toBeInTheDocument();
 	});
 
 	it("hides the 'Disponíveis' section when all plugins are active", () => {

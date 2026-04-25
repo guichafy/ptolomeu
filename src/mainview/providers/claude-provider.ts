@@ -27,7 +27,7 @@ export function sessionToResult(session: SessionMeta): SearchResult {
 
 export const claudeProvider: SearchProvider = {
 	id: "claude",
-	label: "Claude",
+	label: "Claude Code",
 	icon: Bot,
 	placeholder: "Pergunte algo ao Claude...",
 	configComponent: ClaudeSection,

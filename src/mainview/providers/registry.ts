@@ -48,7 +48,7 @@ export const PLUGIN_META: PluginMeta[] = [
 	},
 	{
 		id: "claude",
-		label: "Claude",
+		label: "Claude Code",
 		description: "Sessões de chat com Claude Code",
 		icon: Bot,
 	},
