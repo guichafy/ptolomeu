@@ -30,8 +30,6 @@ export interface BedrockConfig {
 const AUTH_DIR = join(homedir(), ".ptolomeu", "auth");
 const BEDROCK_PATH = join(AUTH_DIR, "bedrock.json");
 
-const ANTHROPIC_CONSOLE_URL = "https://console.anthropic.com/settings/keys";
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -149,31 +147,22 @@ export async function getClaudeAuthStatus(): Promise<ClaudeAuthStatus> {
 	};
 }
 
-/**
- * Starts the Anthropic SSO login flow by opening the console in the browser.
- *
- * In a full implementation this would coordinate with the Claude Agent SDK OAuth
- * flow. For now it opens the Anthropic console and expects the token to be
- * provided separately via a future callback / paste mechanism.
- */
-export async function loginAnthropicSSO(): Promise<{
-	ok: boolean;
-	error?: string;
-}> {
+async function runOsascriptTerminal(
+	command: string,
+): Promise<{ ok: boolean; error?: string }> {
 	try {
-		await ensureAuthDir();
-
-		// Open the Anthropic console in the default browser
-		const proc = Bun.spawn(["open", ANTHROPIC_CONSOLE_URL], {
-			stdout: "pipe",
-			stderr: "pipe",
-		});
+		const proc = Bun.spawn(
+			[
+				"osascript",
+				"-e",
+				`tell application "Terminal" to do script "${command}"`,
+				"-e",
+				`tell application "Terminal" to activate`,
+			],
+			{ stdout: "pipe", stderr: "pipe" },
+		);
 		const code = await proc.exited;
-
-		if (code !== 0) {
-			return { ok: false, error: "Falha ao abrir o navegador" };
-		}
-
+		if (code !== 0) return { ok: false, error: "Falha ao abrir o Terminal" };
 		return { ok: true };
 	} catch (err) {
 		return {
@@ -183,51 +172,18 @@ export async function loginAnthropicSSO(): Promise<{
 	}
 }
 
-/**
- * Saves an Anthropic SSO token obtained from the OAuth flow.
- */
-export async function saveAnthropicToken(
-	email: string,
-	token: string,
-): Promise<{ ok: boolean; error?: string }> {
-	const trimmedEmail = email.trim();
-	const trimmedToken = token.trim();
-	if (!trimmedEmail || !trimmedToken) {
-		return { ok: false, error: "Email e token sao obrigatorios" };
-	}
-
-	try {
-		await ensureAuthDir();
-		const data = { email: trimmedEmail, token: trimmedToken };
-		await Bun.write(
-			join(AUTH_DIR, "anthropic.json"),
-			JSON.stringify(data, null, 2),
-		);
-		return { ok: true };
-	} catch (err) {
-		return {
-			ok: false,
-			error: err instanceof Error ? err.message : "Falha ao salvar token",
-		};
-	}
+export async function installClaudeCli(): Promise<{
+	ok: boolean;
+	error?: string;
+}> {
+	return runOsascriptTerminal("curl -fsSL https://claude.ai/install.sh | bash");
 }
 
-/**
- * Clears the Anthropic SSO token, effectively logging out.
- */
-export async function logoutAnthropicSSO(): Promise<boolean> {
-	const anthropicPath = join(AUTH_DIR, "anthropic.json");
-	try {
-		const file = Bun.file(anthropicPath);
-		if (await file.exists()) {
-			// Overwrite with empty object then remove by writing empty
-			const { unlink } = await import("node:fs/promises");
-			await unlink(anthropicPath);
-		}
-		return true;
-	} catch {
-		return false;
-	}
+export async function openClaudeLogin(): Promise<{
+	ok: boolean;
+	error?: string;
+}> {
+	return runOsascriptTerminal("claude /login");
 }
 
 /**

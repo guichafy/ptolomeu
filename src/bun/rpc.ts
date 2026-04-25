@@ -18,8 +18,8 @@ import {
 	type ClaudeAuthStatus,
 	getBedrockConfig,
 	getClaudeAuthStatus,
-	loginAnthropicSSO,
-	logoutAnthropicSSO,
+	installClaudeCli,
+	openClaudeLogin,
 	setBedrockConfig,
 } from "./claude/auth";
 import { mcpLoader, type StoredMcpServer } from "./claude/mcp-loader";
@@ -136,11 +136,14 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				response: StoredMessageV2[];
 			};
 			claudeGetAuthStatus: { params: void; response: ClaudeAuthStatus };
-			claudeLoginSSO: {
+			claudeOpenLogin: {
 				params: void;
 				response: { ok: boolean; error?: string };
 			};
-			claudeLogoutSSO: { params: void; response: boolean };
+			claudeInstallCli: {
+				params: void;
+				response: { ok: boolean; error?: string };
+			};
 			claudeSetBedrock: { params: BedrockConfig; response: boolean };
 			claudeGetBedrock: { params: void; response: BedrockConfig | null };
 			claudeListSupportedModels: {
@@ -628,20 +631,14 @@ export const requestHandlers = {
 	claudeGetSessionMessages: async ({ sessionId }) =>
 		claudeGetSessionMessages(sessionId),
 	claudeGetAuthStatus: async () => getClaudeAuthStatus(),
-	claudeLoginSSO: async () => {
-		const result = await loginAnthropicSSO();
+	claudeOpenLogin: async () => {
+		const result = await openClaudeLogin();
 		if (result.ok) {
 			await invalidateModelsCache("anthropic");
 		}
 		return result;
 	},
-	claudeLogoutSSO: async () => {
-		const ok = await logoutAnthropicSSO();
-		if (ok) {
-			await invalidateModelsCache("anthropic");
-		}
-		return ok;
-	},
+	claudeInstallCli: async () => installClaudeCli(),
 	claudeSetBedrock: async (config) => {
 		const ok = await setBedrockConfig(config);
 		if (ok) {
