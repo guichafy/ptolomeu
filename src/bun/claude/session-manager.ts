@@ -4,21 +4,19 @@ import { join } from "node:path";
 import type {
 	CanUseTool,
 	PermissionResult,
-	SDKSession,
+	Query,
+	SDKMessage,
+	SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import {
-	unstable_v2_createSession,
-	unstable_v2_resumeSession,
-} from "@anthropic-ai/claude-agent-sdk";
+import { query } from "@anthropic-ai/claude-agent-sdk";
 import { loadSettings } from "../settings";
+import { findClaudeCli } from "./claude-cli";
 import { mcpLoader } from "./mcp-loader";
+import { createMessageInbox, type MessageInbox } from "./message-inbox";
 import { PermissionGate } from "./permission-gate";
 import { type Project, ProjectStore } from "./persistence/project-store";
 import { ToolDecisionStore } from "./persistence/tool-decisions";
-import {
-	buildCreateSessionOptions,
-	buildResumeSessionOptions,
-} from "./session-options";
+import { buildQueryOptions } from "./session-options";
 import type {
 	MessagePersister,
 	PersistBlock,
@@ -40,51 +38,6 @@ const verbose = (...args: unknown[]) => {
 function previewText(text: string, max = 60): string {
 	const cleaned = text.replace(/\s+/g, " ").trim();
 	return cleaned.length <= max ? cleaned : `${cleaned.slice(0, max)}...`;
-}
-
-// ---------------------------------------------------------------------------
-// Claude CLI path resolution
-// ---------------------------------------------------------------------------
-
-let cachedClaudePath: string | null = null;
-
-async function findClaudeCli(): Promise<string> {
-	if (cachedClaudePath) {
-		verbose(`[claude:session] claude CLI (cached): path=${cachedClaudePath}`);
-		return cachedClaudePath;
-	}
-
-	// 1. Try Bun.which (checks PATH)
-	const fromPath = Bun.which("claude");
-	if (fromPath) {
-		cachedClaudePath = fromPath;
-		verbose(`[claude:session] claude CLI resolved via PATH: path=${fromPath}`);
-		return fromPath;
-	}
-
-	// 2. Check common install locations
-	const home = homedir();
-	const candidates = [
-		join(home, ".local", "bin", "claude"),
-		join(home, ".claude", "bin", "claude"),
-		"/usr/local/bin/claude",
-	];
-
-	for (const candidate of candidates) {
-		const file = Bun.file(candidate);
-		if (await file.exists()) {
-			cachedClaudePath = candidate;
-			verbose(
-				`[claude:session] claude CLI resolved via fallback: path=${candidate}`,
-			);
-			return candidate;
-		}
-	}
-
-	console.error("[claude:session] claude CLI not found in PATH or fallbacks");
-	throw new Error(
-		"Claude Code CLI não encontrado. Instale com: npm install -g @anthropic-ai/claude-code",
-	);
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +106,8 @@ export interface StoredMessageV2 {
 	cost?: number;
 	durationMs?: number;
 	tokenUsage?: { input: number; output: number };
+	/** Set when this user message was sent with a per-turn model override. */
+	modelUsed?: string;
 }
 
 export type StoredMessage = StoredMessageV1 | StoredMessageV2;
@@ -186,9 +141,33 @@ const projectStore = new ProjectStore();
 // State
 // ---------------------------------------------------------------------------
 
-let activeSession: SDKSession | null = null;
-let activeSessionId: string | null = null;
-let activeStreamingLoop: Promise<void> | null = null;
+interface ActiveQuery {
+	query: Query;
+	inbox: MessageInbox;
+	streamingLoop: Promise<void> | null;
+	/**
+	 * Callbacks fired when the streaming loop reports the next `result`
+	 * SDKMessage. Used by `sendMessage` to restore the model after a per-turn
+	 * override completes. FIFO; each turn shifts one off.
+	 */
+	turnCompletionQueue: Array<() => Promise<void>>;
+}
+
+let active: { sessionId: string; q: ActiveQuery } | null = null;
+
+let pendingNew: {
+	id: string;
+	inbox: MessageInbox;
+	options: ReturnType<typeof buildQueryOptions>;
+} | null = null;
+
+function buildUserMessage(text: string): SDKUserMessage {
+	return {
+		type: "user",
+		message: { role: "user", content: text },
+		parent_tool_use_id: null,
+	} as SDKUserMessage;
+}
 
 /**
  * Injected by the RPC layer (Etapa 5) before any session is created.
@@ -213,8 +192,9 @@ const toolDecisionStore = new ToolDecisionStore();
 
 const permissionGate = new PermissionGate({
 	onDecision: (record) => {
-		if (!activeSessionId) return;
-		toolDecisionStore.append(activeSessionId, record).catch((err) => {
+		if (!active) return;
+		const sessionId = active.sessionId;
+		toolDecisionStore.append(sessionId, record).catch((err) => {
 			console.error("[claude:permission] audit write failed:", err);
 		});
 	},
@@ -407,29 +387,111 @@ const persister: MessagePersister = {
 };
 
 /**
- * The SDK assigns a real session ID only after the first message exchange,
- * so `createSession` falls back to our internal UUID. After each stream
- * completes, sync the real ID to disk for future `resumeSession` calls.
+ * SDK session id capture is deferred to the streaming-loop side. Task 5
+ * validates whether `session_id` arrives on the first SDKMessage and wires
+ * the capture path if so. For now this is a defensive no-op so that the
+ * resume-by-sdkSessionId path keeps working with the placeholder we wrote
+ * at createSession time.
  */
-async function syncSdkSessionId(
-	internalId: string,
-	sdkSession: SDKSession,
-): Promise<void> {
+async function syncSdkSessionId(internalId: string, _q: Query): Promise<void> {
+	void internalId;
+	void _q;
+}
+
+// ---------------------------------------------------------------------------
+// Models cache helpers (lazy — module lands in Task 6)
+// ---------------------------------------------------------------------------
+
+type ModelsCacheModule = {
+	peekModels: (
+		authMode: SessionMeta["authMode"],
+	) => import("@anthropic-ai/claude-agent-sdk").ModelInfo[] | null;
+	putModelsFromInit: (
+		models: import("@anthropic-ai/claude-agent-sdk").ModelInfo[],
+	) => Promise<void>;
+};
+
+// Indirect specifier so TypeScript doesn't statically resolve the module
+// before Task 6 lands. The `import()` call still works at runtime once the
+// real `models-cache.ts` exists; until then it throws and the catch handles it.
+const MODELS_CACHE_SPECIFIER = "./models-cache";
+
+async function loadModelsCache(): Promise<ModelsCacheModule | null> {
 	try {
-		const resolvedId = sdkSession.sessionId;
-		if (!resolvedId) return;
-		const idx = await readIndex();
-		const m = idx.sessions.find((s) => s.id === internalId);
-		if (m && m.sdkSessionId !== resolvedId) {
-			verbose(
-				`[claude:session] syncSdkSessionId: id=${internalId} old=${m.sdkSessionId} new=${resolvedId}`,
-			);
-			m.sdkSessionId = resolvedId;
-			await writeIndex(idx);
-		}
+		const mod = (await import(MODELS_CACHE_SPECIFIER)) as ModelsCacheModule;
+		return mod;
 	} catch {
-		// sessionId not available — ignore
+		return null;
 	}
+}
+
+async function tryGetCachedModels(
+	authMode: SessionMeta["authMode"],
+): Promise<import("@anthropic-ai/claude-agent-sdk").ModelInfo[] | null> {
+	const mod = await loadModelsCache();
+	if (!mod) return null;
+	try {
+		return mod.peekModels(authMode);
+	} catch {
+		return null;
+	}
+}
+
+function notifySessionModelChanged(sessionId: string, model: string): void {
+	// AgentEvent type extension lands in Task 7. Type-assert until then.
+	sender.sendEvent?.(sessionId, {
+		type: "session-model-changed",
+		sessionId,
+		model,
+	} as never);
+}
+
+async function primeModelsCacheFromQuery(q: Query): Promise<void> {
+	try {
+		const mod = await loadModelsCache();
+		if (!mod) return;
+		const init = await q.initializationResult();
+		await mod.putModelsFromInit(init.models);
+	} catch (err) {
+		// init result not yet available or other transient failure; ignore.
+		verbose(`[claude:session] primeModelsCacheFromQuery skipped: ${err}`);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Streaming-loop launcher
+// ---------------------------------------------------------------------------
+
+function startLoopForActive(sessionId: string): boolean {
+	if (!active || active.sessionId !== sessionId) return false;
+	const q = active.q.query;
+	active.q.streamingLoop = startStreamingLoop(
+		q as AsyncIterable<SDKMessage>,
+		sessionId,
+		sender,
+		persister,
+		{
+			onTurnComplete: () => {
+				if (!active || active.sessionId !== sessionId) return;
+				const cb = active.q.turnCompletionQueue.shift();
+				if (cb) {
+					cb().catch((err) => {
+						console.error(
+							"[claude:session] turn completion callback failed:",
+							err,
+						);
+					});
+				}
+			},
+		},
+	)
+		.then(() => syncSdkSessionId(sessionId, q))
+		.finally(() => {
+			if (active && active.sessionId === sessionId) {
+				active.q.streamingLoop = null;
+			}
+		});
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -483,14 +545,12 @@ export async function createSession(
 		`[claude:session] createSession prompt preview: id=${id} prompt="${previewText(prompt)}"`,
 	);
 
-	// Load current settings for model and permission mode
 	const settings = await loadSettings();
 	const { model, permissionMode, authMode } = settings.claude;
 	verbose(
 		`[claude:session] createSession settings: model=${model} permissionMode=${permissionMode} authMode=${authMode}`,
 	);
 
-	// Resolve the Claude CLI path
 	const claudePath = await findClaudeCli();
 	const mcpServers = await mcpLoader.resolve();
 	const mcpNames = Object.keys(mcpServers);
@@ -500,48 +560,17 @@ export async function createSession(
 		);
 	}
 
-	// Create the SDK session
-	const sdkSession = unstable_v2_createSession(
-		buildCreateSessionOptions({
-			model,
-			permissionMode,
-			claudePath,
-			canUseTool: buildCanUseTool(id, project.path),
-			mcpServers,
-			cwd: project.path,
-		}),
-	);
-	verbose(`[claude:session] SDK session created: id=${id}`);
-	// Send the initial prompt — the SDK session needs a user message to begin
-	await sdkSession.send(prompt);
-	verbose(`[claude:session] initial prompt sent: id=${id}`);
-
-	// The sessionId becomes available after the first message is received.
-	// We peek at the stream to capture it, then let the streaming loop
-	// continue from there.
-	let sdkSessionId = "";
-	try {
-		// Access sessionId — for new sessions it becomes available after send
-		sdkSessionId = sdkSession.sessionId;
-	} catch {
-		// If not yet available, use our UUID as a fallback; we will update
-		// once the stream yields a message with session_id.
-		sdkSessionId = id;
-	}
-	console.log(
-		`[claude:session] createSession ready: id=${id} sdkSessionId=${sdkSessionId}`,
-	);
-
-	// Store as active
-	activeSession = sdkSession;
-	activeSessionId = id;
+	// Build the inbox and the first user message; do NOT start query() yet.
+	// Deferred-start (existing invariant): the chat window must be mounted
+	// before the streaming loop emits its first chunk, otherwise
+	// chatRpc.send.* drops.
+	const inbox = createMessageInbox();
+	inbox.push(buildUserMessage(prompt));
 
 	const now = new Date().toISOString();
-
-	// Save metadata
 	const meta: SessionMeta = {
 		id,
-		sdkSessionId,
+		sdkSessionId: id, // placeholder; gets corrected by sdk-session-id capture in the streaming loop
 		title: generateTitle(prompt),
 		projectId: project.id,
 		projectPath: project.path,
@@ -567,15 +596,21 @@ export async function createSession(
 		`[claude:session] metadata persisted: id=${id} title="${meta.title}"`,
 	);
 
-	// Streaming loop start is deferred to the first `resumeSession` call that
-	// arrives from the chat window (triggered when the webview mounts and
-	// acknowledges `openSession`). Starting here races with the transport
-	// setup: early `chatRpc.send.*` calls land before the window can receive
-	// them and `safeSend` silently drops them, leaving the UI stuck waiting
-	// for a `finish` event it will never see.
+	pendingNew = {
+		id,
+		inbox,
+		options: buildQueryOptions({
+			model,
+			permissionMode,
+			claudePath,
+			canUseTool: buildCanUseTool(id, project.path),
+			mcpServers,
+			cwd: project.path,
+		}),
+	};
 
 	console.log(
-		`[claude:session] createSession done: id=${id} (${Date.now() - t0}ms) — streaming deferred until resumeSession`,
+		`[claude:session] createSession done: id=${id} (${Date.now() - t0}ms) — query() deferred until resumeSession`,
 	);
 	return id;
 }
@@ -585,38 +620,49 @@ export async function createSession(
  * re-attaching to the SDK session.
  *
  * Doubles as the deferred-start entrypoint for freshly created sessions:
- * `createSession` leaves the SDK session primed but does not open the
- * stream, because early events would race the chat window's RPC transport
+ * `createSession` leaves the prompt + options primed but does not call
+ * `query()`, because early events would race the chat window's RPC transport
  * and vanish. The first `resumeSession` from the newly opened window
- * triggers `startStreamingLoop` — by then the renderer is subscribed.
+ * triggers `query()` + `startStreamingLoop` — by then the renderer is
+ * subscribed.
  */
 export async function resumeSession(sessionId: string): Promise<boolean> {
 	console.log(`[claude:session] resumeSession start: id=${sessionId}`);
 
-	if (activeSessionId === sessionId && activeSession) {
-		if (activeStreamingLoop) {
+	// Case 1: same session already active (deferred-start has already fired)
+	if (active && active.sessionId === sessionId) {
+		if (active.q.streamingLoop) {
 			console.log(
 				`[claude:session] resumeSession: id=${sessionId} stream already running`,
 			);
 			return true;
 		}
-		console.log(
-			`[claude:session] resumeSession: starting deferred stream for id=${sessionId}`,
-		);
-		const sdkSession = activeSession;
-		activeStreamingLoop = startStreamingLoop(
-			sdkSession,
-			sessionId,
-			sender,
-			persister,
-		)
-			.then(() => syncSdkSessionId(sessionId, sdkSession))
-			.finally(() => {
-				activeStreamingLoop = null;
-			});
-		return true;
+		// Stream finished but query is still alive — start a fresh one.
+		// Practically rare with the long-lived stable Query; defensive guard only.
+		return startLoopForActive(sessionId);
 	}
 
+	// Case 2: deferred new session — first resume from chat window after createSession
+	if (pendingNew && pendingNew.id === sessionId) {
+		const q = query({
+			prompt: pendingNew.inbox.iterable,
+			options: pendingNew.options,
+		});
+		active = {
+			sessionId,
+			q: {
+				query: q,
+				inbox: pendingNew.inbox,
+				streamingLoop: null,
+				turnCompletionQueue: [],
+			},
+		};
+		pendingNew = null;
+		void primeModelsCacheFromQuery(q);
+		return startLoopForActive(sessionId);
+	}
+
+	// Case 3: cold resume of a previously persisted session
 	const index = await readIndex();
 	const meta = index.sessions.find((s) => s.id === sessionId);
 	if (!meta) {
@@ -627,43 +673,49 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 	}
 
 	const settings = await loadSettings();
-	const { model } = settings.claude;
+	const { permissionMode } = settings.claude;
+	let model = meta.model;
 
 	try {
 		const claudePath = await findClaudeCli();
 		const mcpServers = await mcpLoader.resolve();
 		const cwd = await resolveProjectPath(meta);
-		const sdkSession = unstable_v2_resumeSession(
-			meta.sdkSessionId,
-			buildResumeSessionOptions({
+
+		// Downgrade silently when meta.model has been retired.
+		const cached = await tryGetCachedModels(meta.authMode);
+		if (cached && cached.length > 0 && !cached.some((m) => m.value === model)) {
+			console.warn(
+				`[claude:session] meta.model="${model}" not in cache — downgrading to "${cached[0].value}"`,
+			);
+			model = cached[0].value;
+			meta.model = model;
+			await writeIndex(index);
+			notifySessionModelChanged(sessionId, model);
+		}
+
+		const inbox = createMessageInbox();
+		const q = query({
+			prompt: inbox.iterable,
+			options: buildQueryOptions({
 				model,
+				permissionMode,
 				claudePath,
 				canUseTool: buildCanUseTool(sessionId, cwd),
 				mcpServers,
 				cwd,
+				resumeSdkSessionId: meta.sdkSessionId,
 			}),
-		);
-
-		activeSession = sdkSession;
-		activeSessionId = sessionId;
+		});
+		active = {
+			sessionId,
+			q: { query: q, inbox, streamingLoop: null, turnCompletionQueue: [] },
+		};
+		void primeModelsCacheFromQuery(q);
 
 		console.log(
 			`[claude:session] resumeSession ready: id=${sessionId} sdkSessionId=${meta.sdkSessionId} model=${model}`,
 		);
-
-		// Start the streaming loop to capture any incoming messages
-		activeStreamingLoop = startStreamingLoop(
-			sdkSession,
-			sessionId,
-			sender,
-			persister,
-		)
-			.then(() => syncSdkSessionId(sessionId, sdkSession))
-			.finally(() => {
-				activeStreamingLoop = null;
-			});
-
-		return true;
+		return startLoopForActive(sessionId);
 	} catch (err) {
 		console.error("[claude:session] resumeSession failed:", err);
 		return false;
@@ -673,22 +725,27 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 /**
  * Sends a follow-up message in the active session.
  *
- * The SDK session is single-use: after the stream ends, it cannot accept
- * more messages. So for each new message we:
- *   1. Wait for any ongoing loop to finish
- *   2. Create a fresh resumed SDK session using the latest sdkSessionId
- *   3. Send the message and start a new streaming loop
+ * With the stable `query()` API the SDK session is long-lived and accepts
+ * additional user messages via the prompt async-iterable. We just push the
+ * new message on the inbox; the running streaming loop continues to drain
+ * the resulting SDK messages.
+ *
+ * `opts.modelOverride` switches the model for just this turn. The previous
+ * model is restored via the `turnCompletionQueue`, fired when the streaming
+ * loop reports the next `result`.
  */
-export async function sendMessage(message: string): Promise<void> {
-	if (!activeSessionId) {
+export async function sendMessage(
+	message: string,
+	opts: { modelOverride?: string } = {},
+): Promise<void> {
+	if (!active) {
 		console.error("[claude:session] sendMessage: no active session");
 		throw new Error("No active session");
 	}
-
-	const internalId = activeSessionId;
+	const internalId = active.sessionId;
 
 	console.log(
-		`[claude:session] sendMessage start: sessionId=${internalId} length=${message.length}`,
+		`[claude:session] sendMessage start: sessionId=${internalId} length=${message.length} override=${opts.modelOverride ?? "(none)"}`,
 	);
 	verbose(
 		`[claude:session] sendMessage preview: sessionId=${internalId} message="${previewText(message)}"`,
@@ -699,70 +756,69 @@ export async function sendMessage(message: string): Promise<void> {
 		role: "user",
 		blocks: [{ type: "text", text: message }],
 		timestamp: new Date().toISOString(),
+		...(opts.modelOverride && { modelUsed: opts.modelOverride }),
 	});
-
-	if (activeStreamingLoop) {
-		verbose(
-			`[claude:session] sendMessage: awaiting previous streaming loop for id=${internalId}`,
-		);
-		await activeStreamingLoop.catch(() => {});
-	}
 
 	const index = await readIndex();
 	const meta = index.sessions.find((s) => s.id === internalId);
 	if (!meta) {
-		console.error(
-			`[claude:session] sendMessage: metadata not found for id=${internalId}`,
-		);
 		throw new Error(`Session metadata not found: ${internalId}`);
 	}
 
-	const settings = await loadSettings();
-	const { model } = settings.claude;
-	const claudePath = await findClaudeCli();
-	const mcpServers = await mcpLoader.resolve();
-	const cwd = await resolveProjectPath(meta);
+	let restore: string | null = null;
+	if (opts.modelOverride && opts.modelOverride !== meta.model) {
+		const cached = await tryGetCachedModels(meta.authMode);
+		// If we have a cache and the override isn't in it, ignore.
+		// If we have no cache, allow it (best-effort).
+		if (!cached || cached.some((m) => m.value === opts.modelOverride)) {
+			restore = meta.model;
+			try {
+				await active.q.query.setModel(opts.modelOverride);
+			} catch (err) {
+				console.warn("[claude:session] setModel(override) failed:", err);
+				restore = null;
+			}
+		} else {
+			console.warn(
+				`[claude:session] modelOverride="${opts.modelOverride}" not in cache — ignoring`,
+			);
+		}
+	}
 
-	const sdkSession = unstable_v2_resumeSession(
-		meta.sdkSessionId,
-		buildResumeSessionOptions({
-			model,
-			claudePath,
-			canUseTool: buildCanUseTool(internalId, cwd),
-			mcpServers,
-			cwd,
-		}),
-	);
-	verbose(
-		`[claude:session] sendMessage: new SDK session resumed from sdkSessionId=${meta.sdkSessionId}`,
-	);
-
-	activeSession = sdkSession;
-	await sdkSession.send(message);
-	console.log(`[claude:session] sendMessage sent: sessionId=${internalId}`);
-
-	activeStreamingLoop = startStreamingLoop(
-		sdkSession,
-		internalId,
-		sender,
-		persister,
-	)
-		.then(() => syncSdkSessionId(internalId, sdkSession))
-		.finally(() => {
-			activeStreamingLoop = null;
+	if (restore !== null) {
+		const restoreModel = restore;
+		active.q.turnCompletionQueue.push(async () => {
+			try {
+				if (active && active.sessionId === internalId) {
+					await active.q.query.setModel(restoreModel);
+				}
+			} catch (err) {
+				console.warn("[claude:session] setModel(restore) failed:", err);
+				sender.sendEvent?.(internalId, {
+					type: "error",
+					error: {
+						message: "Falha ao restaurar modelo da sessão",
+						recoverable: true,
+					},
+				});
+			}
 		});
+	}
+
+	active.q.inbox.push(buildUserMessage(message));
 }
 
 /**
- * Stops the currently running generation by closing the SDK session.
+ * Stops the currently running generation by interrupting the active query.
+ * The Query is kept alive so follow-up messages remain possible.
  */
 export async function stopGeneration(): Promise<boolean> {
 	console.log(
-		`[claude:session] stopGeneration: activeId=${activeSessionId ?? "null"}`,
+		`[claude:session] stopGeneration: activeId=${active?.sessionId ?? "null"}`,
 	);
-	if (!activeSession) return false;
+	if (!active) return false;
 
-	// Release any tool-permission promises the SDK is awaiting. The close()
+	// Release any tool-permission promises the SDK is awaiting. The interrupt
 	// below races them; cancelling explicitly avoids leaking deny timers.
 	const cancelled = permissionGate.cancelAll("generation stopped");
 	if (cancelled > 0) {
@@ -772,9 +828,8 @@ export async function stopGeneration(): Promise<boolean> {
 	}
 
 	try {
-		activeSession.close();
-		activeSession = null;
-		console.log("[claude:session] stopGeneration: success");
+		await active.q.query.interrupt();
+		console.log("[claude:session] stopGeneration: interrupted");
 		return true;
 	} catch (err) {
 		console.error("[claude:session] stopGeneration failed:", err);
@@ -806,18 +861,17 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 	// If this is the active session, close it and drain its streaming loop
 	// BEFORE touching files — otherwise the loop's final writes can land
 	// after rm and either recreate the dir or error out mid-flush.
-	if (activeSessionId === sessionId && activeSession) {
+	if (active && active.sessionId === sessionId) {
 		try {
-			activeSession.close();
+			active.q.inbox.close();
+			active.q.query.close();
 		} catch {
 			// Ignore close errors
 		}
-		if (activeStreamingLoop) {
-			await activeStreamingLoop.catch(() => {});
-			activeStreamingLoop = null;
+		if (active.q.streamingLoop) {
+			await active.q.streamingLoop.catch(() => {});
 		}
-		activeSession = null;
-		activeSessionId = null;
+		active = null;
 	}
 
 	// Remove from index
@@ -837,9 +891,11 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 	// currently active in memory — still needs it. The in-memory check
 	// matters once multiple sessions share a project: a sibling session
 	// might be mid-flight and not yet persisted.
+	const activeSessionIdSnap =
+		active !== null && active.sessionId !== sessionId ? active.sessionId : null;
 	const activeOnProject =
-		activeSessionId !== null && activeSessionId !== sessionId
-			? index.sessions.find((s) => s.id === activeSessionId)?.projectId ===
+		activeSessionIdSnap !== null
+			? index.sessions.find((s) => s.id === activeSessionIdSnap)?.projectId ===
 				projectId
 			: false;
 	const stillReferenced =
@@ -870,10 +926,41 @@ export async function getSessionMessages(
  * Returns the ID of the currently active session, or null.
  */
 export function getActiveSessionId(): string | null {
-	return activeSessionId;
+	return active?.sessionId ?? null;
 }
 
 /** Lists all known projects. Exposed for future project-picker UI. */
 export async function listProjects(): Promise<Project[]> {
 	return projectStore.list();
+}
+
+/**
+ * Persists a new model on a session's metadata, switching the live runtime
+ * model when that session is currently active. Refuses while a streaming
+ * loop is in flight (the SDK can't safely change models mid-turn).
+ */
+export async function setSessionModel(
+	sessionId: string,
+	model: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+	const index = await readIndex();
+	const meta = index.sessions.find((s) => s.id === sessionId);
+	if (!meta) return { ok: false, reason: "session-not-found" };
+
+	if (active && active.sessionId === sessionId) {
+		if (active.q.streamingLoop) {
+			return { ok: false, reason: "session-busy" };
+		}
+		try {
+			await active.q.query.setModel(model);
+		} catch (err) {
+			console.error("[claude:session] setSessionModel runtime failed:", err);
+			return { ok: false, reason: "sdk-error" };
+		}
+	}
+
+	meta.model = model;
+	await writeIndex(index);
+	notifySessionModelChanged(sessionId, model);
+	return { ok: true };
 }
