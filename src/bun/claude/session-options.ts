@@ -1,79 +1,46 @@
+// src/bun/claude/session-options.ts
 import type {
 	CanUseTool,
 	McpServerConfig,
+	Options,
 	PermissionMode,
-	SDKSessionOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 
-// SDKSessionOptions does not publicly expose `includePartialMessages`,
-// `mcpServers`, or `cwd`, but the underlying `query` machinery accepts them
-// all at runtime. The V2 chat UI depends on `stream_event` messages (partial
-// assistant deltas); without includePartialMessages=true the SDK emits only
-// complete `assistant` messages and no text-* events reach the renderer.
-// `cwd` scopes the agent to a per-conversation project directory — without
-// it the SDK inherits process.cwd() (the Electrobun repo).
-export type SessionOptionsInternal = SDKSessionOptions & {
-	includePartialMessages?: boolean;
-	mcpServers?: Record<string, McpServerConfig>;
-	cwd?: string;
-};
-
-// Tools listed here bypass `canUseTool` entirely (SDK auto-allows them),
-// which means the WorkspaceJail never runs for them. Keep this list
-// strictly read-only — any tool that can create, modify, or execute must
-// fall through to canUseTool so the jail can enforce workspace containment
-// and the HITL permission gate can prompt when needed.
 const ALLOWED_TOOLS = ["Read", "Glob", "Grep", "LS"];
 
-export interface BuildCreateArgs {
+export interface BuildQueryArgs {
 	model: string;
-	permissionMode: PermissionMode;
+	permissionMode?: PermissionMode;
 	claudePath: string;
 	canUseTool: CanUseTool;
 	mcpServers: Record<string, McpServerConfig>;
-	/** Per-conversation project directory — becomes the agent's cwd. */
 	cwd: string;
+	/** Pass to resume an existing SDK session (CLI `--resume` semantics). */
+	resumeSdkSessionId?: string;
 }
 
-export interface BuildResumeArgs {
-	model: string;
-	claudePath: string;
-	canUseTool: CanUseTool;
-	mcpServers: Record<string, McpServerConfig>;
-	/** Project directory of the session being resumed. */
-	cwd: string;
-}
-
-export function buildCreateSessionOptions(
-	args: BuildCreateArgs,
-): SessionOptionsInternal {
-	const opts: SessionOptionsInternal = {
+/**
+ * Build `Options` for the stable `query({ prompt, options })`.
+ * `permissionMode` is omitted on resume to honour the SDK transcript's prior mode.
+ * `mcpServers` is only attached when non-empty so we don't override the file-based config with `{}`.
+ */
+export function buildQueryOptions(args: BuildQueryArgs): Options {
+	const opts: Options = {
 		model: args.model,
-		permissionMode: args.permissionMode,
 		pathToClaudeCodeExecutable: args.claudePath,
 		allowedTools: ALLOWED_TOOLS,
 		canUseTool: args.canUseTool,
 		includePartialMessages: true,
 		cwd: args.cwd,
 	};
+	if (args.permissionMode) {
+		opts.permissionMode = args.permissionMode;
+	}
 	if (Object.keys(args.mcpServers).length > 0) {
 		opts.mcpServers = args.mcpServers;
 	}
-	return opts;
-}
-
-export function buildResumeSessionOptions(
-	args: BuildResumeArgs,
-): SessionOptionsInternal {
-	const opts: SessionOptionsInternal = {
-		model: args.model,
-		pathToClaudeCodeExecutable: args.claudePath,
-		canUseTool: args.canUseTool,
-		includePartialMessages: true,
-		cwd: args.cwd,
-	};
-	if (Object.keys(args.mcpServers).length > 0) {
-		opts.mcpServers = args.mcpServers;
+	if (args.resumeSdkSessionId) {
+		opts.resume = args.resumeSdkSessionId;
 	}
 	return opts;
 }
