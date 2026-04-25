@@ -96,7 +96,7 @@ describe("<SettingsDialog />", () => {
 	it("lists sub-nav entries for enabled plugins that have a configComponent", () => {
 		render(<SettingsDialog />);
 		// Claude has a configComponent and is in enabledOrder → sub-nav shows up
-		const claudeEntries = screen.getAllByText("Claude");
+		const claudeEntries = screen.getAllByText("Claude Code");
 		expect(claudeEntries.length).toBeGreaterThanOrEqual(1);
 	});
 
@@ -107,7 +107,7 @@ describe("<SettingsDialog />", () => {
 		// The sub-nav button for Claude (only rendered because configComponent exists)
 		const claudeBtn = screen
 			.getAllByRole("button")
-			.find((b) => b.textContent?.trim() === "Claude");
+			.find((b) => b.textContent?.trim() === "Claude Code");
 		expect(claudeBtn).toBeDefined();
 		await user.click(claudeBtn!);
 
