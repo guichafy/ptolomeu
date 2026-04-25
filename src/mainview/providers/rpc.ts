@@ -267,11 +267,14 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				response: StoredMessage[];
 			};
 			claudeGetAuthStatus: { params: void; response: ClaudeAuthStatus };
-			claudeLoginSSO: {
+			claudeOpenLogin: {
 				params: void;
 				response: { ok: boolean; error?: string };
 			};
-			claudeLogoutSSO: { params: void; response: boolean };
+			claudeInstallCli: {
+				params: void;
+				response: { ok: boolean; error?: string };
+			};
 			claudeSetBedrock: { params: BedrockConfig; response: boolean };
 			claudeGetBedrock: { params: void; response: BedrockConfig | null };
 			claudeOpenChat: {
