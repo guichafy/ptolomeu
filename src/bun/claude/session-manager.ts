@@ -387,15 +387,28 @@ const persister: MessagePersister = {
 };
 
 /**
- * SDK session id capture is deferred to the streaming-loop side. Task 5
- * validates whether `session_id` arrives on the first SDKMessage and wires
- * the capture path if so. For now this is a defensive no-op so that the
- * resume-by-sdkSessionId path keeps working with the placeholder we wrote
- * at createSession time.
+ * Called by the streaming loop's `onSdkSessionId` hook when the SDK reveals
+ * its own session id on the first message. Updates the index only when the
+ * value actually changes (the placeholder UUID is replaced exactly once).
  */
-async function syncSdkSessionId(internalId: string, _q: Query): Promise<void> {
-	void internalId;
-	void _q;
+async function recordSdkSessionId(
+	internalId: string,
+	sdkSessionId: string,
+): Promise<void> {
+	if (!sdkSessionId) return;
+	try {
+		const idx = await readIndex();
+		const m = idx.sessions.find((s) => s.id === internalId);
+		if (m && m.sdkSessionId !== sdkSessionId) {
+			verbose(
+				`[claude:session] recordSdkSessionId: id=${internalId} old=${m.sdkSessionId} new=${sdkSessionId}`,
+			);
+			m.sdkSessionId = sdkSessionId;
+			await writeIndex(idx);
+		}
+	} catch (err) {
+		console.error("[claude:session] recordSdkSessionId failed:", err);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -483,14 +496,15 @@ function startLoopForActive(sessionId: string): boolean {
 					});
 				}
 			},
+			onSdkSessionId: (sdkSessionId) => {
+				void recordSdkSessionId(sessionId, sdkSessionId);
+			},
 		},
-	)
-		.then(() => syncSdkSessionId(sessionId, q))
-		.finally(() => {
-			if (active && active.sessionId === sessionId) {
-				active.q.streamingLoop = null;
-			}
-		});
+	).finally(() => {
+		if (active && active.sessionId === sessionId) {
+			active.q.streamingLoop = null;
+		}
+	});
 	return true;
 }
 

@@ -69,6 +69,8 @@ export type MessagePersister = {
 export interface StreamingHooks {
 	/** Fires once a `result` SDKMessage has been fully processed and persisted. */
 	onTurnComplete?: () => void;
+	/** Fires once when the SDK reveals its session id on the first message that carries it. */
+	onSdkSessionId?: (sdkSessionId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +207,7 @@ export async function startStreamingLoop(
 
 	// Thinking blocks come from stream_event deltas (the SDK omits them
 	// from the complete assistant message).
+	let sdkSessionIdRecorded = false;
 	let accumulatedBlocks: PersistBlock[] = [];
 	const toolElapsed = new Map<string, number>();
 	let currentThinking = "";
@@ -226,6 +229,22 @@ export async function startStreamingLoop(
 			verbose(
 				`[claude:stream] chunk #${chunkCount}: sessionId=${sessionId} type=${msg.type}`,
 			);
+
+			if (!sdkSessionIdRecorded) {
+				const candidate = (msg as { session_id?: unknown }).session_id;
+				if (typeof candidate === "string" && candidate.length > 0) {
+					try {
+						hooks.onSdkSessionId?.(candidate);
+					} catch (hookErr) {
+						console.error(
+							`[claude:stream] onSdkSessionId hook threw: sessionId=${sessionId}`,
+							hookErr,
+						);
+					}
+					sdkSessionIdRecorded = true;
+				}
+			}
+
 			pushAgentEvents(msg);
 
 			// Track thinking blocks from stream_event deltas.
