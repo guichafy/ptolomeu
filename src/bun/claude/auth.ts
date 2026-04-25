@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 
 // ---------------------------------------------------------------------------
@@ -73,6 +73,60 @@ async function readAnthropicToken(): Promise<AnthropicToken | null> {
 		return isAnthropicToken(parsed) ? parsed : null;
 	} catch {
 		return null;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CLI / Keychain detection
+// ---------------------------------------------------------------------------
+
+export interface ClaudeCliInfo {
+	installed: boolean;
+	path?: string;
+}
+
+const FALLBACK_CLI_PATHS = [
+	join(homedir(), ".local/bin/claude"),
+	"/usr/local/bin/claude",
+	"/opt/homebrew/bin/claude",
+];
+
+export async function detectClaudeCli(): Promise<ClaudeCliInfo> {
+	try {
+		const proc = Bun.spawn(["/bin/zsh", "-lc", "command -v claude"], {
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const code = await proc.exited;
+		if (code === 0) {
+			const out = (await new Response(proc.stdout).text()).trim();
+			if (out) return { installed: true, path: out };
+		}
+	} catch {
+		// fall through to path probe
+	}
+	for (const p of FALLBACK_CLI_PATHS) {
+		if (await Bun.file(p).exists()) return { installed: true, path: p };
+	}
+	return { installed: false };
+}
+
+export async function detectClaudeCodeKeychain(): Promise<boolean> {
+	try {
+		const proc = Bun.spawn(
+			[
+				"security",
+				"find-generic-password",
+				"-s",
+				"Claude Code-credentials",
+				"-a",
+				userInfo().username,
+			],
+			{ stdout: "ignore", stderr: "ignore" },
+		);
+		return (await proc.exited) === 0;
+	} catch {
+		return false;
 	}
 }
 
