@@ -6,9 +6,14 @@ import { join } from "node:path";
 // Types
 // ---------------------------------------------------------------------------
 
+export type ClaudeCliStatus =
+	| "not-installed"
+	| "not-authenticated"
+	| "authenticated";
+
 export interface ClaudeAuthStatus {
 	mode: "anthropic" | "bedrock" | "none";
-	anthropic?: { connected: boolean; email?: string };
+	anthropic?: { cliStatus: ClaudeCliStatus };
 	bedrock?: { endpoint: string; profile: string; region: string };
 }
 
@@ -18,17 +23,11 @@ export interface BedrockConfig {
 	region: string;
 }
 
-interface AnthropicToken {
-	email: string;
-	token: string;
-}
-
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
 
 const AUTH_DIR = join(homedir(), ".ptolomeu", "auth");
-const ANTHROPIC_PATH = join(AUTH_DIR, "anthropic.json");
 const BEDROCK_PATH = join(AUTH_DIR, "bedrock.json");
 
 const ANTHROPIC_CONSOLE_URL = "https://console.anthropic.com/settings/keys";
@@ -39,17 +38,6 @@ const ANTHROPIC_CONSOLE_URL = "https://console.anthropic.com/settings/keys";
 
 async function ensureAuthDir(): Promise<void> {
 	await mkdir(AUTH_DIR, { recursive: true });
-}
-
-function isAnthropicToken(value: unknown): value is AnthropicToken {
-	if (!value || typeof value !== "object") return false;
-	const v = value as Record<string, unknown>;
-	return (
-		typeof v.email === "string" &&
-		!!v.email &&
-		typeof v.token === "string" &&
-		!!v.token
-	);
 }
 
 function isBedrockConfig(value: unknown): value is BedrockConfig {
@@ -63,17 +51,6 @@ function isBedrockConfig(value: unknown): value is BedrockConfig {
 		typeof v.region === "string" &&
 		!!v.region
 	);
-}
-
-async function readAnthropicToken(): Promise<AnthropicToken | null> {
-	const file = Bun.file(ANTHROPIC_PATH);
-	if (!(await file.exists())) return null;
-	try {
-		const parsed = JSON.parse(await file.text());
-		return isAnthropicToken(parsed) ? parsed : null;
-	} catch {
-		return null;
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -138,34 +115,38 @@ export async function detectClaudeCodeKeychain(): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the current authentication status by inspecting stored credentials.
- * Checks for Anthropic SSO token first, then Bedrock config.
+ * Returns the current authentication status by detecting the Claude CLI and
+ * checking the system keychain for Claude Code credentials.
  */
 export async function getClaudeAuthStatus(): Promise<ClaudeAuthStatus> {
-	const [anthropicToken, bedrockConfig] = await Promise.all([
-		readAnthropicToken(),
+	const [cli, bedrockConfig] = await Promise.all([
+		detectClaudeCli(),
 		getBedrockConfig(),
 	]);
 
-	if (anthropicToken) {
-		return {
-			mode: "anthropic",
-			anthropic: { connected: true, email: anthropicToken.email },
-		};
-	}
+	let cliStatus: ClaudeCliStatus;
+	if (!cli.installed) cliStatus = "not-installed";
+	else if (await detectClaudeCodeKeychain()) cliStatus = "authenticated";
+	else cliStatus = "not-authenticated";
 
-	if (bedrockConfig) {
-		return {
-			mode: "bedrock",
-			bedrock: {
-				endpoint: bedrockConfig.endpoint,
-				profile: bedrockConfig.profile,
-				region: bedrockConfig.region,
-			},
-		};
-	}
+	let mode: ClaudeAuthStatus["mode"];
+	if (cliStatus === "authenticated") mode = "anthropic";
+	else if (bedrockConfig) mode = "bedrock";
+	else mode = "none";
 
-	return { mode: "none" };
+	return {
+		mode,
+		anthropic: { cliStatus },
+		...(bedrockConfig
+			? {
+					bedrock: {
+						endpoint: bedrockConfig.endpoint,
+						profile: bedrockConfig.profile,
+						region: bedrockConfig.region,
+					},
+				}
+			: {}),
+	};
 }
 
 /**
@@ -217,8 +198,11 @@ export async function saveAnthropicToken(
 
 	try {
 		await ensureAuthDir();
-		const data: AnthropicToken = { email: trimmedEmail, token: trimmedToken };
-		await Bun.write(ANTHROPIC_PATH, JSON.stringify(data, null, 2));
+		const data = { email: trimmedEmail, token: trimmedToken };
+		await Bun.write(
+			join(AUTH_DIR, "anthropic.json"),
+			JSON.stringify(data, null, 2),
+		);
 		return { ok: true };
 	} catch (err) {
 		return {
@@ -232,12 +216,13 @@ export async function saveAnthropicToken(
  * Clears the Anthropic SSO token, effectively logging out.
  */
 export async function logoutAnthropicSSO(): Promise<boolean> {
+	const anthropicPath = join(AUTH_DIR, "anthropic.json");
 	try {
-		const file = Bun.file(ANTHROPIC_PATH);
+		const file = Bun.file(anthropicPath);
 		if (await file.exists()) {
 			// Overwrite with empty object then remove by writing empty
 			const { unlink } = await import("node:fs/promises");
-			await unlink(ANTHROPIC_PATH);
+			await unlink(anthropicPath);
 		}
 		return true;
 	} catch {

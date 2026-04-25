@@ -1,5 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { detectClaudeCli, detectClaudeCodeKeychain } from "./auth";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as joinPath } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	detectClaudeCli,
+	detectClaudeCodeKeychain,
+	getClaudeAuthStatus,
+} from "./auth";
 
 const originalSpawn = (Bun as unknown as { spawn: typeof Bun.spawn }).spawn;
 
@@ -84,5 +91,83 @@ describe("detectClaudeCodeKeychain", () => {
 	it("returns false when security exits non-zero", async () => {
 		mockSpawn(() => ({ exit: 44 }));
 		expect(await detectClaudeCodeKeychain()).toBe(false);
+	});
+});
+
+describe("getClaudeAuthStatus", () => {
+	let bedrockDir: string;
+	const origHome = process.env.HOME;
+
+	beforeEach(() => {
+		bedrockDir = mkdtempSync(joinPath(tmpdir(), "ptolomeu-test-"));
+		process.env.HOME = bedrockDir;
+	});
+
+	afterEach(() => {
+		rmSync(bedrockDir, { recursive: true, force: true });
+		if (origHome !== undefined) process.env.HOME = origHome;
+		else delete process.env.HOME;
+	});
+
+	function writeBedrock() {
+		const dir = joinPath(bedrockDir, ".ptolomeu", "auth");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(
+			joinPath(dir, "bedrock.json"),
+			JSON.stringify({ endpoint: "https://e", profile: "p", region: "r" }),
+		);
+	}
+
+	it("CLI absent, no bedrock → not-installed / mode=none", async () => {
+		mockSpawn((cmd) => (cmd[0] === "security" ? { exit: 1 } : { exit: 1 }));
+		vi.spyOn(Bun, "file").mockImplementation(((_p: string) => ({
+			exists: async () => false,
+		})) as typeof Bun.file);
+		const status = await getClaudeAuthStatus();
+		expect(status.anthropic?.cliStatus).toBe("not-installed");
+		expect(status.mode).toBe("none");
+		expect(status.bedrock).toBeUndefined();
+	});
+
+	it("CLI absent, bedrock present → not-installed / mode=bedrock", async () => {
+		writeBedrock();
+		mockSpawn(() => ({ exit: 1 }));
+		vi.spyOn(Bun, "file").mockImplementation(((p: string) => ({
+			exists: async () => p.endsWith("bedrock.json"),
+			text: async () =>
+				JSON.stringify({ endpoint: "https://e", profile: "p", region: "r" }),
+		})) as typeof Bun.file);
+		const status = await getClaudeAuthStatus();
+		expect(status.anthropic?.cliStatus).toBe("not-installed");
+		expect(status.mode).toBe("bedrock");
+		expect(status.bedrock?.endpoint).toBe("https://e");
+	});
+
+	it("CLI present, keychain absent → not-authenticated", async () => {
+		mockSpawn((cmd) => {
+			if (cmd[0] === "/bin/zsh") return { exit: 0, stdout: "/usr/bin/claude" };
+			if (cmd[0] === "security") return { exit: 1 };
+			return { exit: 1 };
+		});
+		vi.spyOn(Bun, "file").mockImplementation(((_p: string) => ({
+			exists: async () => false,
+		})) as typeof Bun.file);
+		const status = await getClaudeAuthStatus();
+		expect(status.anthropic?.cliStatus).toBe("not-authenticated");
+		expect(status.mode).toBe("none");
+	});
+
+	it("CLI present, keychain present → authenticated / mode=anthropic", async () => {
+		mockSpawn((cmd) => {
+			if (cmd[0] === "/bin/zsh") return { exit: 0, stdout: "/usr/bin/claude" };
+			if (cmd[0] === "security") return { exit: 0 };
+			return { exit: 1 };
+		});
+		vi.spyOn(Bun, "file").mockImplementation(((_p: string) => ({
+			exists: async () => false,
+		})) as typeof Bun.file);
+		const status = await getClaudeAuthStatus();
+		expect(status.anthropic?.cliStatus).toBe("authenticated");
+		expect(status.mode).toBe("anthropic");
 	});
 });
