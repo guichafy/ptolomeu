@@ -21,8 +21,14 @@ export interface BuildQueryArgs {
 
 /**
  * Build `Options` for the stable `query({ prompt, options })`.
- * `permissionMode` is omitted on resume to honour the SDK transcript's prior mode.
- * `mcpServers` is only attached when non-empty so we don't override the file-based config with `{}`.
+ *
+ * Optional fields are emitted only when supplied:
+ * - `permissionMode` — pass on createSession; omit on resumeSession to honour
+ *   the SDK transcript's prior mode.
+ * - `mcpServers` — only attached when non-empty so we don't override file-based
+ *   config with `{}`.
+ * - `resume` (mapped from `resumeSdkSessionId`) — set only when continuing an
+ *   existing SDK session.
  */
 export function buildQueryOptions(args: BuildQueryArgs): Options {
 	const opts: Options = {
