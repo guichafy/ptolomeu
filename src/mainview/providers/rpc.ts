@@ -41,7 +41,6 @@ export interface ClaudeSettings {
 	authMode: ClaudeAuthMode;
 	model: string;
 	permissionMode: ClaudePermissionMode;
-	useAiElements: boolean;
 }
 
 export interface McpServerEntry {

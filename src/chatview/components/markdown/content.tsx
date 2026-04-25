@@ -11,13 +11,11 @@ const components: Components = {
 	code({ className, children, ...props }) {
 		const match = /language-(\w+)/.exec(className || "");
 
-		// Fenced code block (has language class from markdown parser)
 		if (match) {
 			const code = String(children).replace(/\n$/, "");
 			return <CodeBlock code={code} language={match[1]} />;
 		}
 
-		// Inline code
 		return (
 			<code
 				className="rounded bg-muted px-1.5 py-0.5 text-[0.85em] font-mono text-foreground"
@@ -27,7 +25,6 @@ const components: Components = {
 			</code>
 		);
 	},
-	// Block-level pre: just pass through (CodeBlock handles styling)
 	pre({ children }) {
 		return <>{children}</>;
 	},
@@ -106,10 +103,9 @@ const components: Components = {
 };
 
 export function MarkdownContent({ content }: MarkdownContentProps) {
-	// Intentionally no explicit color on the wrapper: we inherit from the
-	// parent so user bubbles (bg-primary / text-primary-foreground) and
-	// assistant bubbles (bg-muted / text-foreground) each stay legible.
-	// Overriding with text-foreground here made user messages white-on-white.
+	// No explicit color on the wrapper: inherit from the parent so user
+	// bubbles (bg-primary / text-primary-foreground) and assistant bubbles
+	// (bg-muted / text-foreground) each stay legible.
 	return (
 		<div className="text-sm">
 			<ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>

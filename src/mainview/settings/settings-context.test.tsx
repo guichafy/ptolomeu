@@ -43,7 +43,6 @@ function defaultRemoteSettings() {
 			authMode: "anthropic" as const,
 			model: "claude-sonnet-4-6",
 			permissionMode: "acceptEdits" as const,
-			useAiElements: false,
 		},
 		proxy: { mode: "auto" as const },
 	};

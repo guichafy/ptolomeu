@@ -183,23 +183,8 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 		requests: {};
 		messages: {
 			openPreferences: { section?: SettingsSection };
-			claudeStreamChunk: { sessionId: string; chunk: unknown };
-			claudeStreamEnd: {
-				sessionId: string;
-				result: {
-					subtype: string;
-					result?: string;
-					totalCostUsd?: number;
-					durationMs?: number;
-					usage?: { input: number; output: number };
-				};
-			};
-			claudeStreamError: { sessionId: string; error: string };
 			claudeOpenSession: { sessionId: string };
 			claudeSessionsUpdate: { sessions: SessionMeta[] };
-			// Typed agent event stream — runs alongside claudeStreamChunk while
-			// the chat UI migrates to AI Elements. Removed when the legacy
-			// accumulator is retired (see plan 2026-04-23, phase 5).
 			agentEvent: { sessionId: string; event: AgentEvent };
 		};
 	};
@@ -691,18 +676,6 @@ function safeSend(label: string, fn: () => void): void {
 	}
 }
 claudeSetSender({
-	sendChunk: (sessionId, chunk) =>
-		safeSend("claudeStreamChunk", () =>
-			chatRpc.send.claudeStreamChunk({ sessionId, chunk }),
-		),
 	sendEvent: (sessionId, event) =>
 		safeSend("agentEvent", () => chatRpc.send.agentEvent({ sessionId, event })),
-	sendEnd: (sessionId, result) =>
-		safeSend("claudeStreamEnd", () =>
-			chatRpc.send.claudeStreamEnd({ sessionId, result }),
-		),
-	sendError: (sessionId, error) =>
-		safeSend("claudeStreamError", () =>
-			chatRpc.send.claudeStreamError({ sessionId, error }),
-		),
 });

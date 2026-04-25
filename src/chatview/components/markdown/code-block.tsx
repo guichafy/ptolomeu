@@ -48,7 +48,6 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
 
 	return (
 		<div className="group relative my-2 rounded-md border border-border/40 overflow-hidden">
-			{/* Header bar */}
 			<div className="flex items-center justify-between bg-muted/50 px-3 py-1">
 				<span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
 					{language || "text"}
@@ -73,7 +72,6 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
 				</button>
 			</div>
 
-			{/* Code content */}
 			<div className="max-h-[400px] overflow-auto">
 				<SyntaxHighlighter
 					language={language || "text"}

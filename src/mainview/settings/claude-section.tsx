@@ -11,7 +11,6 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
 	type ClaudeAuthMode,
@@ -49,9 +48,6 @@ export function ClaudeSection() {
 	const [permissionMode, setPermissionMode] = useState<ClaudePermissionMode>(
 		settings?.claude?.permissionMode ?? "acceptEdits",
 	);
-	const [useAiElements, setUseAiElements] = useState<boolean>(
-		settings?.claude?.useAiElements ?? false,
-	);
 
 	// Sessions
 	const [sessionCount, setSessionCount] = useState(0);
@@ -63,7 +59,6 @@ export function ClaudeSection() {
 			setAuthMode(settings.claude.authMode);
 			setModel(settings.claude.model);
 			setPermissionMode(settings.claude.permissionMode);
-			setUseAiElements(settings.claude.useAiElements ?? false);
 		}
 	}, [settings?.claude]);
 
@@ -104,7 +99,6 @@ export function ClaudeSection() {
 			authMode: ClaudeAuthMode;
 			model: string;
 			permissionMode: ClaudePermissionMode;
-			useAiElements: boolean;
 		}>,
 	) {
 		try {
@@ -166,11 +160,6 @@ export function ClaudeSection() {
 	function handlePermissionChange(value: ClaudePermissionMode) {
 		setPermissionMode(value);
 		persistClaudeSetting({ permissionMode: value });
-	}
-
-	function handleUseAiElementsChange(value: boolean) {
-		setUseAiElements(value);
-		persistClaudeSetting({ useAiElements: value });
 	}
 
 	async function handleClearHistory() {
@@ -396,32 +385,6 @@ export function ClaudeSection() {
 						<SelectItem value="plan">Apenas planejar</SelectItem>
 					</SelectContent>
 				</Select>
-			</div>
-
-			<Separator className="opacity-40" />
-
-			{/* UI experimental */}
-			<div className="flex flex-col gap-2.5">
-				<h3 className="text-sm font-semibold">Interface</h3>
-				<div className="flex items-start justify-between gap-3 rounded-lg border border-border/50 bg-card/50 p-3">
-					<div className="flex flex-col gap-0.5">
-						<label
-							htmlFor="claude-use-ai-elements"
-							className="text-xs font-medium"
-						>
-							Nova interface (beta)
-						</label>
-						<span className="text-[11px] text-muted-foreground">
-							Renderizar o chat com AI Elements e eventos tipados. Reabra a
-							janela do chat para aplicar.
-						</span>
-					</div>
-					<Switch
-						id="claude-use-ai-elements"
-						checked={useAiElements}
-						onCheckedChange={handleUseAiElementsChange}
-					/>
-				</div>
 			</div>
 
 			<Separator className="opacity-40" />
