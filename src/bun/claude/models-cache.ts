@@ -6,29 +6,47 @@ import { mcpLoader } from "./mcp-loader";
 import { createMessageInbox } from "./message-inbox";
 import { buildQueryOptions } from "./session-options";
 
-export type ClaudeAuthMode = "anthropic" | "bedrock";
+export type { ClaudeAuthMode } from "../settings";
+
+import type { ClaudeAuthMode } from "../settings";
 
 const cache = new Map<ClaudeAuthMode, ModelInfo[]>();
 const inFlight = new Map<ClaudeAuthMode, Promise<ModelInfo[]>>();
+const generation = new Map<ClaudeAuthMode, number>();
+
+function bumpGeneration(authMode: ClaudeAuthMode): void {
+	generation.set(authMode, (generation.get(authMode) ?? 0) + 1);
+}
 
 export function peekModels(authMode: ClaudeAuthMode): ModelInfo[] | null {
 	return cache.get(authMode) ?? null;
 }
 
-export async function putModelsFromInit(models: ModelInfo[]): Promise<void> {
-	const settings = await loadSettings();
-	const mode: ClaudeAuthMode = settings.claude.authMode;
-	cache.set(mode, models);
+export function putModelsFromInit(
+	models: ModelInfo[],
+	authMode: ClaudeAuthMode,
+): void {
+	cache.set(authMode, models);
 }
 
 export function invalidate(authMode?: ClaudeAuthMode): void {
 	if (!authMode) {
 		cache.clear();
 		inFlight.clear();
+		// Bump every known mode plus both well-known modes, so any in-flight
+		// discovery resolves to a stale-epoch check.
+		for (const mode of new Set<ClaudeAuthMode>([
+			"anthropic",
+			"bedrock",
+			...generation.keys(),
+		])) {
+			bumpGeneration(mode);
+		}
 		return;
 	}
 	cache.delete(authMode);
 	inFlight.delete(authMode);
+	bumpGeneration(authMode);
 }
 
 export interface GetModelsOpts {
@@ -45,10 +63,14 @@ export async function getModels(
 	const inflight = inFlight.get(authMode);
 	if (inflight) return inflight;
 
+	const epoch = generation.get(authMode) ?? 0;
 	const discoverFn = opts.discover ?? (() => discoverModels(authMode));
 	const promise = discoverFn()
 		.then((models) => {
-			cache.set(authMode, models);
+			// Only honor the discovery if no invalidate() bumped our epoch in flight.
+			if ((generation.get(authMode) ?? 0) === epoch) {
+				cache.set(authMode, models);
+			}
 			return models;
 		})
 		.finally(() => {
@@ -96,4 +118,5 @@ async function discoverModels(authMode: ClaudeAuthMode): Promise<ModelInfo[]> {
 export function __resetModelsCache(): void {
 	cache.clear();
 	inFlight.clear();
+	generation.clear();
 }
