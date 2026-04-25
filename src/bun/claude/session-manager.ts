@@ -596,6 +596,16 @@ export async function createSession(
 		`[claude:session] metadata persisted: id=${id} title="${meta.title}"`,
 	);
 
+	if (pendingNew) {
+		console.warn(
+			`[claude:session] createSession: replacing unrealized pendingNew id=${pendingNew.id} (chat never opened?)`,
+		);
+		try {
+			pendingNew.inbox.close();
+		} catch {
+			// best-effort cleanup
+		}
+	}
 	pendingNew = {
 		id,
 		inbox,
@@ -677,6 +687,22 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 	let model = meta.model;
 
 	try {
+		if (active && active.sessionId !== sessionId) {
+			console.log(
+				`[claude:session] resumeSession: tearing down prior active session ${active.sessionId} before cold resume of ${sessionId}`,
+			);
+			try {
+				active.q.inbox.close();
+				active.q.query.close();
+			} catch {
+				// best-effort cleanup
+			}
+			if (active.q.streamingLoop) {
+				await active.q.streamingLoop.catch(() => {});
+			}
+			active = null;
+		}
+
 		const claudePath = await findClaudeCli();
 		const mcpServers = await mcpLoader.resolve();
 		const cwd = await resolveProjectPath(meta);
@@ -742,7 +768,8 @@ export async function sendMessage(
 		console.error("[claude:session] sendMessage: no active session");
 		throw new Error("No active session");
 	}
-	const internalId = active.sessionId;
+	const snap = active; // captured BEFORE any await
+	const internalId = snap.sessionId;
 
 	console.log(
 		`[claude:session] sendMessage start: sessionId=${internalId} length=${message.length} override=${opts.modelOverride ?? "(none)"}`,
@@ -773,7 +800,7 @@ export async function sendMessage(
 		if (!cached || cached.some((m) => m.value === opts.modelOverride)) {
 			restore = meta.model;
 			try {
-				await active.q.query.setModel(opts.modelOverride);
+				await snap.q.query.setModel(opts.modelOverride);
 			} catch (err) {
 				console.warn("[claude:session] setModel(override) failed:", err);
 				restore = null;
@@ -787,11 +814,11 @@ export async function sendMessage(
 
 	if (restore !== null) {
 		const restoreModel = restore;
-		active.q.turnCompletionQueue.push(async () => {
+		snap.q.turnCompletionQueue.push(async () => {
+			// Identity-guard: only restore if this exact slot is still active.
+			if (active !== snap) return;
 			try {
-				if (active && active.sessionId === internalId) {
-					await active.q.query.setModel(restoreModel);
-				}
+				await snap.q.query.setModel(restoreModel);
 			} catch (err) {
 				console.warn("[claude:session] setModel(restore) failed:", err);
 				sender.sendEvent?.(internalId, {
@@ -805,7 +832,7 @@ export async function sendMessage(
 		});
 	}
 
-	active.q.inbox.push(buildUserMessage(message));
+	snap.q.inbox.push(buildUserMessage(message));
 }
 
 /**
@@ -891,8 +918,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 	// currently active in memory — still needs it. The in-memory check
 	// matters once multiple sessions share a project: a sibling session
 	// might be mid-flight and not yet persisted.
-	const activeSessionIdSnap =
-		active !== null && active.sessionId !== sessionId ? active.sessionId : null;
+	const activeSessionIdSnap = active?.sessionId ?? null;
 	const activeOnProject =
 		activeSessionIdSnap !== null
 			? index.sessions.find((s) => s.id === activeSessionIdSnap)?.projectId ===
