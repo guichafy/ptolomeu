@@ -126,6 +126,58 @@ function extractBlocksFromAssistantMessage(
 }
 
 /**
+ * Append `incoming` thinking blocks to `accumulated`, deduping by `thinking`
+ * text. If a duplicate is found and the incoming version carries `durationMs`
+ * while the existing one does not, the existing entry is upgraded in place.
+ * `prepend` flips the insert position from end to beginning (used at result
+ * time to keep thinking before text in the final transcript).
+ */
+function mergeThinkingBlocks(
+	accumulated: PersistBlock[],
+	incoming: PersistBlock[],
+	prepend = false,
+): void {
+	for (const next of incoming) {
+		if (next.type !== "thinking") continue;
+		const existingIdx = accumulated.findIndex(
+			(b) => b.type === "thinking" && b.thinking === next.thinking,
+		);
+		if (existingIdx === -1) {
+			if (prepend) accumulated.unshift(next);
+			else accumulated.push(next);
+			continue;
+		}
+		const existing = accumulated[existingIdx] as Extract<
+			PersistBlock,
+			{ type: "thinking" }
+		>;
+		// Upgrade duration if we now have it and didn't before.
+		if (next.durationMs !== undefined && existing.durationMs === undefined) {
+			existing.durationMs = next.durationMs;
+		}
+	}
+}
+
+/**
+ * Append assistant-message blocks to `accumulated`. Thinking blocks are
+ * deduped via `mergeThinkingBlocks`; non-thinking blocks (text, tool_use)
+ * are appended unconditionally — the SDK can send the same logical text
+ * across multiple assistant chunks, but we treat each chunk as a distinct
+ * append (matches pre-migration behavior).
+ */
+function mergeAssistantBlocks(
+	accumulated: PersistBlock[],
+	incoming: PersistBlock[],
+): void {
+	const thinkingPart: PersistBlock[] = [];
+	for (const block of incoming) {
+		if (block.type === "thinking") thinkingPart.push(block);
+		else accumulated.push(block);
+	}
+	if (thinkingPart.length > 0) mergeThinkingBlocks(accumulated, thinkingPart);
+}
+
+/**
  * Extracts tool_result blocks from synthetic SDK user messages.
  * These carry the output of tool executions.
  */
@@ -294,13 +346,17 @@ export async function startStreamingLoop(
 			// Collect structured blocks from complete assistant messages
 			const assistantBlocks = extractBlocksFromAssistantMessage(msg);
 			if (assistantBlocks !== null) {
-				// Check if assistant message already has thinking blocks
+				// Stable `query()` may emit thinking in BOTH `stream_event` deltas
+				// (with a duration we compute) AND in a complete assistant message
+				// (without duration). It can also send multiple assistant chunks
+				// per turn — one with thinking, then another with text. Deduping
+				// by `hasThinking` on the current chunk alone is not enough; we
+				// must check what's already been accumulated for this turn.
 				const hasThinking = assistantBlocks.some((b) => b.type === "thinking");
 				if (!hasThinking && pendingThinkingBlocks.length > 0) {
-					// Prepend stream-accumulated thinking blocks
-					accumulatedBlocks.push(...pendingThinkingBlocks);
+					mergeThinkingBlocks(accumulatedBlocks, pendingThinkingBlocks);
 				}
-				accumulatedBlocks.push(...assistantBlocks);
+				mergeAssistantBlocks(accumulatedBlocks, assistantBlocks);
 				pendingThinkingBlocks.length = 0;
 				verbose(
 					`[claude:stream] assistant blocks extracted: sessionId=${sessionId} count=${assistantBlocks.length} types=[${assistantBlocks.map((b) => b.type).join(",")}]`,
@@ -356,7 +412,7 @@ export async function startStreamingLoop(
 				}
 
 				if (pendingThinkingBlocks.length > 0) {
-					accumulatedBlocks.unshift(...pendingThinkingBlocks);
+					mergeThinkingBlocks(accumulatedBlocks, pendingThinkingBlocks, true);
 					pendingThinkingBlocks.length = 0;
 				}
 
