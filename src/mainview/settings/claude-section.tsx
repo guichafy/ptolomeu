@@ -157,6 +157,7 @@ export function ClaudeSection() {
 
 	async function handleInstallCli() {
 		setActionError(null);
+		setPendingMessage(null);
 		setActionLoading("install");
 		try {
 			const result = await rpc.request.claudeInstallCli();
@@ -172,6 +173,7 @@ export function ClaudeSection() {
 
 	async function handleOpenLogin() {
 		setActionError(null);
+		setPendingMessage(null);
 		setActionLoading("login");
 		try {
 			const result = await rpc.request.claudeOpenLogin();
