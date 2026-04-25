@@ -23,13 +23,14 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { Button } from "@/components/ui/button";
+import type { ProtocolModelInfo } from "@/shared/agent-protocol";
 import {
 	type AgentMessage as AgentMessageType,
 	computeTurnStatus,
 	type SessionState,
 } from "../../hooks/agent-state";
 import { useAgentChat } from "../../hooks/use-agent-chat";
-import { onOpenSession, rpc } from "../../rpc";
+import { onAgentEvent, onOpenSession, rpc } from "../../rpc";
 import { ChatHeader } from "../chat-header";
 import { ConfirmationQueue } from "./confirmation-queue";
 import { MessagePart as MessagePartRenderer } from "./message-parts";
@@ -102,7 +103,28 @@ export function ChatPaneV2() {
 		useAgentChat(sessionId);
 	const [draft, setDraft] = useState("");
 	const [attachments, setAttachments] = useState<Attachment[]>([]);
+	const [models, setModels] = useState<ProtocolModelInfo[]>([]);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+		const refresh = async () => {
+			try {
+				const res = await rpc.request.claudeListSupportedModels();
+				if (!cancelled) setModels(res.models);
+			} catch (err) {
+				console.warn("[chat-pane] claudeListSupportedModels failed:", err);
+			}
+		};
+		refresh();
+		const unsubscribe = onAgentEvent((args) => {
+			if (args.event.type === "models-cache-invalidated") refresh();
+		});
+		return () => {
+			cancelled = true;
+			unsubscribe();
+		};
+	}, []);
 
 	useEffect(() => {
 		onOpenSession(({ sessionId: sid }) => {
@@ -158,6 +180,8 @@ export function ChatPaneV2() {
 			<ChatHeader
 				sessionId={sessionId}
 				sessionState={toLegacySessionState(state.sessionState)}
+				sessionModel={state.sessionModel}
+				models={models}
 			/>
 			<PlanModeBanner />
 			<Conversation>

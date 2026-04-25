@@ -1,5 +1,10 @@
 import { type ElectrobunRPCSchema, Electroview } from "electrobun/view";
-import type { AgentEvent, ApproveBehavior } from "@/shared/agent-protocol";
+import type {
+	AgentEvent,
+	ApproveBehavior,
+	ClaudeAuthMode as ProtocolClaudeAuthMode,
+	ProtocolModelInfo,
+} from "@/shared/agent-protocol";
 import { AgentEventBuffer } from "./lib/agent-event-buffer";
 
 const VERBOSE = import.meta.env.VITE_CLAUDE_LOG_VERBOSE === "1";
@@ -236,6 +241,20 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeLogoutSSO: { params: void; response: boolean };
 			claudeSetBedrock: { params: BedrockConfig; response: boolean };
 			claudeGetBedrock: { params: void; response: BedrockConfig | null };
+			claudeListSupportedModels: {
+				params: void;
+				response: {
+					models: ProtocolModelInfo[];
+					authMode: ProtocolClaudeAuthMode;
+				};
+			};
+			claudeSetSessionModel: {
+				params: { sessionId: string; model: string };
+				response: {
+					ok: boolean;
+					reason?: "session-not-found" | "session-busy" | "sdk-error";
+				};
+			};
 			claudeOpenChat: {
 				params: { sessionId?: string };
 				response: boolean;

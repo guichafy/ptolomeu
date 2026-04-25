@@ -23,6 +23,7 @@ type Action =
 	| { type: "optimistic-user"; id: string; text: string }
 	| { type: "resolve-permission"; permissionId: string }
 	| { type: "hydrate"; messages: AgentMessage[] }
+	| { type: "set-session-model"; model: string | null }
 	| { type: "mark-turn-start" }
 	| { type: "reset" };
 
@@ -47,6 +48,8 @@ function reducer(state: AgentState, action: Action): AgentState {
 				? markTurnStart(hydrated)
 				: hydrated;
 		}
+		case "set-session-model":
+			return { ...state, sessionModel: action.model };
 		case "mark-turn-start":
 			return markTurnStart(state);
 		case "reset":
@@ -84,12 +87,15 @@ export function useAgentChat(sessionId: string | null): UseAgentChatResult {
 	const hydrate = useCallback(async (sid: string) => {
 		const gen = ++hydrateGenRef.current;
 		try {
-			const stored = await rpc.request.claudeGetSessionMessages({
-				sessionId: sid,
-			});
+			const [stored, sessions] = await Promise.all([
+				rpc.request.claudeGetSessionMessages({ sessionId: sid }),
+				rpc.request.claudeListSessions(),
+			]);
 			if (gen !== hydrateGenRef.current) return;
 			const messages = stored.map((m, i) => storedToAgentMessage(m, i));
 			dispatch({ type: "hydrate", messages });
+			const meta = sessions.find((s) => s.id === sid);
+			if (meta) dispatch({ type: "set-session-model", model: meta.model });
 		} catch (err) {
 			console.error("[agent-chat] hydrate failed:", err);
 		}
