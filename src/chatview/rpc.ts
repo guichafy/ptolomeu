@@ -121,9 +121,14 @@ export interface TokenStatus {
 
 export type SettingsSection = "plugins" | "general" | `plugin:${string}`;
 
+export type ClaudeCliStatus =
+	| "not-installed"
+	| "not-authenticated"
+	| "authenticated";
+
 export interface ClaudeAuthStatus {
 	mode: "anthropic" | "bedrock" | "none";
-	anthropic?: { connected: boolean; email?: string };
+	anthropic?: { cliStatus: ClaudeCliStatus };
 	bedrock?: { endpoint: string; profile: string; region: string };
 }
 
