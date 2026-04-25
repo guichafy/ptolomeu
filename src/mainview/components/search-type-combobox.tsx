@@ -72,15 +72,15 @@ export const SearchTypeCombobox = forwardRef<
 				<button
 					type="button"
 					className={cn(
-						"flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold",
+						"inline-flex items-center gap-1.5 h-[26px] rounded-full border px-2.5 text-[11px] font-semibold leading-none transition-colors",
 						isCustom
-							? "border-amber-400/50 bg-amber-400/15 text-amber-200"
-							: "border-blue-400/50 bg-blue-400/15 text-blue-200",
+							? "border-[oklch(0.78_0.110_85_/_0.30)] bg-[oklch(0.78_0.110_85_/_0.10)] text-[oklch(0.88_0.080_85)]"
+							: "border-primary/[0.28] bg-accent text-accent-foreground",
 					)}
 				>
 					<span>{iconFor(activeSubType)}</span>
 					<span>{labelFor(activeSubType)}</span>
-					<ChevronDown className="h-3 w-3 opacity-70" />
+					<ChevronDown className="h-[11px] w-[11px] opacity-70" />
 				</button>
 			</PopoverTrigger>
 			<PopoverContent
@@ -88,10 +88,10 @@ export const SearchTypeCombobox = forwardRef<
 				side="bottom"
 				sideOffset={6}
 				avoidCollisions={false}
-				className="w-[280px] p-1"
+				className="w-[300px] p-1.5 border-white/[0.06] shadow-[0_12px_32px_oklch(0_0_0_/_0.45)]"
 			>
 				<div className="flex flex-col">
-					<div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+					<div className="font-mono px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.20em] text-muted-foreground">
 						Tipos nativos
 					</div>
 					{NATIVE_TYPES.map((t) => {
@@ -102,10 +102,10 @@ export const SearchTypeCombobox = forwardRef<
 								key={t.type}
 								type="button"
 								className={cn(
-									"flex items-center justify-between rounded-sm px-2 py-1.5 text-sm",
+									"flex items-center justify-between rounded-sm px-2 py-1.5 text-[13px]",
 									active
 										? "bg-accent text-accent-foreground"
-										: "hover:bg-muted",
+										: "hover:bg-white/[0.035]",
 								)}
 								onClick={() => {
 									setSubType({ kind: "native", type: t.type });
@@ -113,7 +113,7 @@ export const SearchTypeCombobox = forwardRef<
 								}}
 							>
 								<span>{t.label}</span>
-								<span className="text-[10px] text-muted-foreground">
+								<span className="font-mono text-[11px] text-muted-foreground">
 									{t.shortcut}
 								</span>
 							</button>
@@ -121,8 +121,8 @@ export const SearchTypeCombobox = forwardRef<
 					})}
 					{customFilters.length > 0 && (
 						<>
-							<div className="my-1 border-t border-border/50" />
-							<div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+							<div className="my-1 border-t border-white/[0.06]" />
+							<div className="font-mono px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.20em] text-muted-foreground">
 								Filtros customizados
 							</div>
 							{customFilters.map((f, idx) => {
@@ -135,22 +135,22 @@ export const SearchTypeCombobox = forwardRef<
 										key={f.id}
 										type="button"
 										className={cn(
-											"flex items-center justify-between rounded-sm px-2 py-1.5 text-sm",
+											"flex items-center justify-between rounded-sm px-2 py-1.5 text-[13px]",
 											active
-												? "bg-accent text-accent-foreground"
-												: "hover:bg-muted",
+												? "bg-[oklch(0.78_0.110_85_/_0.10)] text-[oklch(0.88_0.080_85)]"
+												: "hover:bg-white/[0.035]",
 										)}
 										onClick={() => {
 											setSubType({ kind: "custom", filter: f });
 											setOpen(false);
 										}}
 									>
-										<span className="flex items-center gap-1.5">
-											<span>{f.icon ?? "⭐"}</span>
+										<span className="flex items-center gap-2">
+											<span className="text-[--warning]">{f.icon ?? "⭐"}</span>
 											<span>{f.name}</span>
 										</span>
 										{shortcut && (
-											<span className="text-[10px] text-muted-foreground">
+											<span className="font-mono text-[11px] text-muted-foreground">
 												{shortcut}
 											</span>
 										)}
@@ -159,16 +159,16 @@ export const SearchTypeCombobox = forwardRef<
 							})}
 						</>
 					)}
-					<div className="my-1 border-t border-border/50" />
+					<div className="my-1 border-t border-white/[0.06]" />
 					<button
 						type="button"
-						className="flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+						className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-[13px] text-muted-foreground hover:bg-white/[0.035] hover:text-foreground"
 						onClick={() => {
 							setOpen(false);
 							openDialog("plugin:github");
 						}}
 					>
-						<Settings className="h-3 w-3" />
+						<Settings className="h-[13px] w-[13px]" />
 						Configurar filtros…
 					</button>
 				</div>

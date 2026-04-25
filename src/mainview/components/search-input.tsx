@@ -14,7 +14,7 @@ export function SearchInput({
 }: SearchInputProps) {
 	return (
 		<div className="relative flex flex-1 items-center">
-			<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+			<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-primary" />
 			<Input
 				type="text"
 				placeholder={placeholder}
@@ -25,7 +25,7 @@ export function SearchInput({
 						e.currentTarget.select();
 					}
 				}}
-				className="pl-9"
+				className="h-12 border-0 bg-transparent pl-10 text-[18px] font-normal tracking-[-0.005em] caret-primary shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/60"
 				autoFocus
 			/>
 		</div>
