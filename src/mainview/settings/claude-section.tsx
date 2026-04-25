@@ -1,5 +1,5 @@
 import { Loader2, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ModelPicker } from "@/components/claude/model-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import { McpServersSection } from "./mcp-servers";
 import { useSettings } from "./settings-context";
 
 export function ClaudeSection() {
-	const { settings } = useSettings();
+	const { settings, isOpen } = useSettings();
 
 	// Auth state
 	const [authStatus, setAuthStatus] = useState<ClaudeAuthStatus | null>(null);
@@ -129,6 +129,44 @@ export function ClaudeSection() {
 		refreshAuth();
 		refreshSessions();
 	}, [refreshAuth, refreshSessions]);
+
+	// Polling: after Install or Login, poll until status transitions
+	useEffect(() => {
+		if (!pendingMessage) return;
+		const isInstall = pendingMessage.includes("Instalando");
+		const intervalMs = isInstall ? 5000 : 3000;
+		const timeoutMs = isInstall ? 5 * 60 * 1000 : 2 * 60 * 1000;
+		const start = Date.now();
+
+		const id = setInterval(async () => {
+			if (Date.now() - start > timeoutMs) {
+				setPendingMessage(null);
+				clearInterval(id);
+				return;
+			}
+			const status = await rpc.request.claudeGetAuthStatus();
+			setAuthStatus(status);
+			if (
+				isInstall
+					? status.anthropic?.cliStatus !== "not-installed"
+					: status.anthropic?.cliStatus === "authenticated"
+			) {
+				setPendingMessage(null);
+				clearInterval(id);
+			}
+		}, intervalMs);
+
+		return () => clearInterval(id);
+	}, [pendingMessage]);
+
+	// Refresh auth when the dialog transitions from closed → open
+	const prevOpenRef = useRef(isOpen);
+	useEffect(() => {
+		if (!prevOpenRef.current && isOpen) {
+			refreshAuth();
+		}
+		prevOpenRef.current = isOpen;
+	}, [isOpen, refreshAuth]);
 
 	// Persist a claude settings change
 	async function persistClaudeSetting(

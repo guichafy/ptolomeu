@@ -26,17 +26,19 @@ vi.mock("../providers/rpc", () => ({
 	onAgentEvent: onAgentEventMock,
 }));
 
-vi.mock("./settings-context", () => ({
-	useSettings: () => ({
-		settings: {
-			claude: {
-				authMode: "anthropic",
-				model: "claude-sonnet-4-6",
-				permissionMode: "acceptEdits",
-			},
+let useSettingsReturn: { settings: unknown; isOpen: boolean } = {
+	settings: {
+		claude: {
+			authMode: "anthropic",
+			model: "claude-sonnet-4-6",
+			permissionMode: "acceptEdits",
 		},
-		isOpen: true,
-	}),
+	},
+	isOpen: true,
+};
+
+vi.mock("./settings-context", () => ({
+	useSettings: () => useSettingsReturn,
 }));
 
 vi.mock("./mcp-servers", () => ({ McpServersSection: () => null }));
@@ -51,6 +53,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.useRealTimers();
+	useSettingsReturn = { ...useSettingsReturn, isOpen: true };
 });
 
 describe("ClaudeSection — auth states", () => {
@@ -116,5 +119,65 @@ describe("ClaudeSection — auth states", () => {
 		expect(
 			screen.queryByRole("button", { name: /Desconectar/i }),
 		).not.toBeInTheDocument();
+	});
+});
+
+describe("ClaudeSection — polling", () => {
+	it("polls until cliStatus transitions to authenticated after login click", async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		claudeGetAuthStatusMock
+			.mockResolvedValueOnce({
+				mode: "none",
+				anthropic: { cliStatus: "not-authenticated" },
+			})
+			.mockResolvedValueOnce({
+				mode: "none",
+				anthropic: { cliStatus: "not-authenticated" },
+			})
+			.mockResolvedValue({
+				mode: "anthropic",
+				anthropic: { cliStatus: "authenticated" },
+			});
+		claudeOpenLoginMock.mockResolvedValue({ ok: true });
+
+		render(<ClaudeSection />);
+		const btn = await screen.findByRole("button", {
+			name: /Abrir Claude Code para conectar/i,
+		});
+		fireEvent.click(btn);
+		await waitFor(() => expect(claudeOpenLoginMock).toHaveBeenCalled());
+
+		// advance 3s — first poll
+		await vi.advanceTimersByTimeAsync(3000);
+		// advance 3s — second poll, should now be authenticated
+		await vi.advanceTimersByTimeAsync(3000);
+
+		await waitFor(() =>
+			expect(
+				screen.getByText(/Conectado via Claude Code/i),
+			).toBeInTheDocument(),
+		);
+	});
+});
+
+describe("ClaudeSection — dialog open refresh", () => {
+	it("re-fetches auth status when isOpen transitions to true", async () => {
+		useSettingsReturn = { ...useSettingsReturn, isOpen: false };
+		claudeGetAuthStatusMock.mockResolvedValue({
+			mode: "none",
+			anthropic: { cliStatus: "not-authenticated" },
+		});
+
+		const { rerender } = render(<ClaudeSection />);
+		await waitFor(() =>
+			expect(claudeGetAuthStatusMock).toHaveBeenCalledTimes(1),
+		);
+
+		useSettingsReturn = { ...useSettingsReturn, isOpen: true };
+		rerender(<ClaudeSection />);
+
+		await waitFor(() =>
+			expect(claudeGetAuthStatusMock).toHaveBeenCalledTimes(2),
+		);
 	});
 });
