@@ -135,6 +135,32 @@ void registerHotkey(void *nsWindowPtr) {
     }
 }
 
+// Override the NSStatusItem length to control the menu bar slot width.
+// Electrobun's `width`/`height` only resize the rendered image — the slot length
+// is independent and defaults to a value Electrobun chooses. We accept the FFI
+// pointer Electrobun returns from createTray (a wrapper around NSStatusItem)
+// and walk to the NSStatusItem via either direct cast or a `statusItem` getter.
+void setTrayLength(void *trayPtr, double length) {
+    if (!trayPtr) return;
+    id obj = (__bridge id)trayPtr;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSStatusItem *item = nil;
+        if ([obj isKindOfClass:[NSStatusItem class]]) {
+            item = (NSStatusItem *)obj;
+        } else if ([obj respondsToSelector:@selector(statusItem)]) {
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            item = (NSStatusItem *)[obj performSelector:@selector(statusItem)];
+            #pragma clang diagnostic pop
+        }
+        if (item) {
+            [item setLength:length];
+        } else {
+            NSLog(@"[Tray] setTrayLength: cannot resolve NSStatusItem from %@", NSStringFromClass([obj class]));
+        }
+    });
+}
+
 void quitApp(void) {
     // Kill the entire process group (app + watcher + parent scripts)
     kill(0, SIGTERM);
