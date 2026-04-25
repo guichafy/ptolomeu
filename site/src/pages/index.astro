@@ -1,0 +1,19 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Hero from "../components/Hero.astro";
+import Features from "../components/Features.astro";
+import Showcase from "../components/Showcase.astro";
+import InstallSteps from "../components/InstallSteps.astro";
+import { fetchReleases } from "../lib/releases";
+
+const { latestVersion, releases } = await fetchReleases(5);
+const latest = releases.find((r) => r.version === latestVersion);
+const latestUrl = latest?.mirrorUrl ?? latest?.assets[0]?.url;
+---
+
+<BaseLayout pathname="/">
+	<Hero latestVersion={latestVersion ?? undefined} latestUrl={latestUrl} />
+	<Features />
+	<Showcase />
+	<InstallSteps />
+</BaseLayout>

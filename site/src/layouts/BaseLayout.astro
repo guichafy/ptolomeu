@@ -1,0 +1,94 @@
+---
+import "../styles/global.css";
+import { SITE } from "../data/site";
+
+type Props = {
+	title?: string;
+	description?: string;
+	pathname?: string;
+};
+
+const { title, description = SITE.description, pathname = "/" } = Astro.props;
+
+const fullTitle = title ? `${title} · ${SITE.name}` : `${SITE.name} — ${SITE.tagline}`;
+const canonical = new URL(pathname, Astro.site).toString();
+const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+const ogImage = new URL(`${baseUrl}/icons/icon-512.png`, Astro.site).toString();
+---
+
+<!doctype html>
+<html lang="pt-BR">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<meta name="generator" content={Astro.generator} />
+		<title>{fullTitle}</title>
+		<meta name="description" content={description} />
+		<link rel="canonical" href={canonical} />
+		<link rel="icon" type="image/png" href={`${baseUrl}/favicon.png`} />
+		<link rel="apple-touch-icon" href={`${baseUrl}/icons/icon.png`} />
+		<meta property="og:type" content="website" />
+		<meta property="og:title" content={fullTitle} />
+		<meta property="og:description" content={description} />
+		<meta property="og:url" content={canonical} />
+		<meta property="og:image" content={ogImage} />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="theme-color" content="#0a0a0b" />
+	</head>
+	<body class="min-h-screen flex flex-col">
+		<header class="sticky top-0 z-40 backdrop-blur-md bg-[var(--color-bg)]/75 border-b border-[var(--color-border)]/60">
+			<nav class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+				<a href={`${baseUrl}/`} class="flex items-center gap-2.5 group">
+					<span class="inline-flex items-center justify-center size-8 rounded-lg bg-white/5 ring-1 ring-white/10 group-hover:ring-[var(--color-accent)]/40 transition-all overflow-hidden">
+						<img src={`${baseUrl}/icons/icon.png`} alt="Logo" width="32" height="32" class="size-7" />
+					</span>
+					<span class="font-semibold tracking-tight text-[var(--color-fg)] group-hover:text-[var(--color-accent)] transition-colors">
+						{SITE.name}
+					</span>
+				</a>
+				<div class="flex items-center gap-1 text-sm">
+					<a
+						href={`${baseUrl}/`}
+						class="px-3 py-1.5 rounded-md text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-white/5 transition-colors"
+					>
+						Produto
+					</a>
+					<a
+						href={`${baseUrl}/releases`}
+						class="px-3 py-1.5 rounded-md text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-white/5 transition-colors"
+					>
+						Downloads
+					</a>
+					<a
+						href={SITE.githubUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="px-3 py-1.5 rounded-md text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-white/5 transition-colors"
+					>
+						GitHub
+					</a>
+				</div>
+			</nav>
+		</header>
+
+		<main class="flex-1">
+			<slot />
+		</main>
+
+		<footer class="border-t border-[var(--color-border)]/60 mt-24">
+			<div class="max-w-6xl mx-auto px-6 py-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-sm text-[var(--color-fg-subtle)]">
+				<div class="flex items-center gap-2">
+					<span class="inline-flex items-center justify-center size-6 rounded-md bg-white/5 ring-1 ring-white/10 overflow-hidden">
+						<img src={`${baseUrl}/icons/icon.png`} alt="" width="24" height="24" class="size-5" />
+					</span>
+					<span>© {new Date().getFullYear()} Ptolomeu — software livre, MIT</span>
+				</div>
+				<div class="flex items-center gap-4">
+					<a href={SITE.githubUrl} class="hover:text-[var(--color-fg)] transition-colors">GitHub</a>
+					<a href={SITE.releasesUrl} class="hover:text-[var(--color-fg)] transition-colors">Releases</a>
+					<a href={SITE.downloadJsonUrl} class="hover:text-[var(--color-fg)] transition-colors font-mono text-xs">latest.json</a>
+				</div>
+			</div>
+		</footer>
+	</body>
+</html>

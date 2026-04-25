@@ -9,7 +9,7 @@ export default defineConfig({
 	},
 	test: {
 		globals: true,
-		exclude: ["test/e2e/**", "node_modules/**"],
+		exclude: ["test/e2e/**", "node_modules/**", "site/**"],
 		coverage: {
 			provider: "v8",
 			reporter: ["text", "lcov", "html"],
