@@ -159,10 +159,13 @@ async function runOsascriptTerminal(
 				"-e",
 				`tell application "Terminal" to activate`,
 			],
-			{ stdout: "pipe", stderr: "pipe" },
+			{ stdout: "ignore", stderr: "ignore" },
 		);
 		const code = await proc.exited;
-		if (code !== 0) return { ok: false, error: "Falha ao abrir o Terminal" };
+		if (code !== 0) {
+			console.error(`[auth] osascript exited ${code}`);
+			return { ok: false, error: "Falha ao abrir o Terminal" };
+		}
 		return { ok: true };
 	} catch (err) {
 		return {

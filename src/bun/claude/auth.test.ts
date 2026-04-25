@@ -173,5 +173,6 @@ describe("openClaudeLogin", () => {
 		const result = await openClaudeLogin();
 		expect(result.ok).toBe(true);
 		expect(calls[0].cmd.some((a) => a.includes("claude /login"))).toBe(true);
+		expect(calls[0].cmd.some((a) => a.includes("activate"))).toBe(true);
 	});
 });
