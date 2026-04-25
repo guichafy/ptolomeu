@@ -1,3 +1,15 @@
+# [0.10.0](https://github.com/guichafy/ptolomeu/compare/v0.9.0...v0.10.0) (2026-04-25)
+
+
+### Bug Fixes
+
+* **icons:** strip residual halo from new icon background ([5d57bf7](https://github.com/guichafy/ptolomeu/commit/5d57bf76b7cfbfe0f5a1955c65d4f5417df4c62f))
+
+
+### Features
+
+* **site:** add Astro landing page and rebrand app icon ([7558828](https://github.com/guichafy/ptolomeu/commit/75588283668ea4845a87afe6c9bb5d37c54fb0ca)), closes [#pages](https://github.com/guichafy/ptolomeu/issues/pages) [#f97316](https://github.com/guichafy/ptolomeu/issues/f97316) [#pages-publish](https://github.com/guichafy/ptolomeu/issues/pages-publish)
+
 # [0.9.0](https://github.com/guichafy/ptolomeu/compare/v0.8.0...v0.9.0) (2026-04-25)
 
 
