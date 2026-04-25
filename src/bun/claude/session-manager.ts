@@ -699,6 +699,20 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 	}
 
 	// Case 3: cold resume of a previously persisted session
+	// Discard a stale pendingNew if it belongs to a different session — it
+	// will never be consumed and would silently leak its inbox + options.
+	if (pendingNew && pendingNew.id !== sessionId) {
+		console.warn(
+			`[claude:session] resumeSession: discarding stale pendingNew id=${pendingNew.id} during cold resume of ${sessionId}`,
+		);
+		try {
+			pendingNew.inbox.close();
+		} catch {
+			// best-effort
+		}
+		pendingNew = null;
+	}
+
 	const index = await readIndex();
 	const meta = index.sessions.find((s) => s.id === sessionId);
 	if (!meta) {
@@ -882,6 +896,20 @@ export async function stopGeneration(): Promise<boolean> {
 
 	try {
 		await active.q.query.interrupt();
+		// Drain any pending turn-completion callbacks (e.g. model-override
+		// restore) since `onTurnComplete` will not fire after an interrupt.
+		// Spec invariant: override restore always runs, including on cancel.
+		if (active) {
+			const pending = active.q.turnCompletionQueue.splice(0);
+			for (const cb of pending) {
+				cb().catch((err) => {
+					console.warn(
+						"[claude:session] stopGeneration drain callback failed:",
+						err,
+					);
+				});
+			}
+		}
 		console.log("[claude:session] stopGeneration: interrupted");
 		return true;
 	} catch (err) {
