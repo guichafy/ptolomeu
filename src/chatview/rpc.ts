@@ -223,7 +223,10 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				params: { sessionId: string };
 				response: boolean;
 			};
-			claudeSendMessage: { params: { message: string }; response: void };
+			claudeSendMessage: {
+				params: { message: string; modelOverride?: string };
+				response: void;
+			};
 			claudeStopGeneration: { params: void; response: boolean };
 			claudeDeleteSession: {
 				params: { sessionId: string };

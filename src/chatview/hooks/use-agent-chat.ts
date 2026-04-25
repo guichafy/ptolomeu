@@ -59,7 +59,10 @@ function reducer(state: AgentState, action: Action): AgentState {
 
 export interface UseAgentChatResult {
 	state: AgentState;
-	sendMessage: (text: string) => Promise<void>;
+	sendMessage: (
+		text: string,
+		opts?: { modelOverride?: string },
+	) => Promise<void>;
 	approveTool: (
 		permissionId: string,
 		behavior: ApproveBehavior,
@@ -124,16 +127,22 @@ export function useAgentChat(sessionId: string | null): UseAgentChatResult {
 		return unsubscribe;
 	}, [sessionId, hydrate]);
 
-	const sendMessage = useCallback(async (text: string) => {
-		if (!text.trim()) return;
-		const id = `user-${Date.now()}`;
-		dispatch({ type: "optimistic-user", id, text });
-		try {
-			await rpc.request.claudeSendMessage({ message: text });
-		} catch (err) {
-			console.error("[agent-chat] sendMessage RPC failed:", err);
-		}
-	}, []);
+	const sendMessage = useCallback(
+		async (text: string, opts: { modelOverride?: string } = {}) => {
+			if (!text.trim()) return;
+			const id = `user-${Date.now()}`;
+			dispatch({ type: "optimistic-user", id, text });
+			try {
+				await rpc.request.claudeSendMessage({
+					message: text,
+					modelOverride: opts.modelOverride,
+				});
+			} catch (err) {
+				console.error("[agent-chat] sendMessage RPC failed:", err);
+			}
+		},
+		[],
+	);
 
 	const approveTool = useCallback<UseAgentChatResult["approveTool"]>(
 		async (permissionId, behavior, modifiedArgs) => {
