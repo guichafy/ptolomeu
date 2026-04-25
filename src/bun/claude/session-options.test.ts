@@ -43,4 +43,10 @@ describe("buildQueryOptions", () => {
 		const opts = buildQueryOptions(baseArgs);
 		expect("resume" in opts).toBe(false);
 	});
+
+	test("omits permissionMode when not provided", () => {
+		const { permissionMode: _, ...argsWithoutMode } = baseArgs;
+		const opts = buildQueryOptions(argsWithoutMode);
+		expect("permissionMode" in opts).toBe(false);
+	});
 });
