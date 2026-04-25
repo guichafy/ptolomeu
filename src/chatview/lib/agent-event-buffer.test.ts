@@ -91,4 +91,44 @@ describe("AgentEventBuffer", () => {
 			"text-end",
 		]);
 	});
+
+	it("buffers session-model-changed before subscribers attach", () => {
+		const buf = new AgentEventBuffer();
+		buf.push({
+			sessionId: "s1",
+			event: {
+				type: "session-model-changed",
+				sessionId: "s1",
+				model: "claude-opus-4-6",
+			},
+		});
+
+		const listener = vi.fn();
+		buf.subscribe(listener);
+
+		expect(listener).toHaveBeenCalledTimes(1);
+		expect(listener.mock.calls[0][0].event).toEqual({
+			type: "session-model-changed",
+			sessionId: "s1",
+			model: "claude-opus-4-6",
+		});
+	});
+
+	it("dispatches models-cache-invalidated to live subscribers", () => {
+		const buf = new AgentEventBuffer();
+		const listener = vi.fn();
+		buf.subscribe(listener);
+
+		buf.push({
+			sessionId: "",
+			event: { type: "models-cache-invalidated", authMode: "anthropic" },
+		});
+
+		expect(listener).toHaveBeenCalledTimes(1);
+		expect(listener.mock.calls[0][0].event).toEqual({
+			type: "models-cache-invalidated",
+			authMode: "anthropic",
+		});
+		expect(listener.mock.calls[0][0].sessionId).toBe("");
+	});
 });
