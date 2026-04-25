@@ -2,11 +2,12 @@ import { readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { defineElectrobunRPC, type ElectrobunRPCSchema } from "electrobun/bun";
-import type {
-	AgentEvent,
-	ApproveBehavior,
-	ClaudeAuthMode,
-	ProtocolModelInfo,
+import {
+	type AgentEvent,
+	type ApproveBehavior,
+	BROADCAST_SESSION_ID,
+	type ClaudeAuthMode,
+	type ProtocolModelInfo,
 } from "@/shared/agent-protocol";
 import { setAnalyticsEnabled, trackEvent } from "./analytics";
 import {
@@ -373,7 +374,7 @@ export function setModelsInvalidatedPusher(
 
 async function invalidateModelsCache(authMode: ClaudeAuthMode): Promise<void> {
 	const { invalidate } = await import("./claude/models-cache");
-	invalidate();
+	invalidate(); // clear ALL modes — stale opposite-mode entries leak otherwise
 	modelsInvalidatedPusher?.(authMode);
 }
 
@@ -737,10 +738,12 @@ setSessionsUpdatePusher((args) => mainRpc.send.claudeSessionsUpdate(args));
 
 // Wire the late-bound models invalidation pusher. Sends to both windows so
 // the settings panel (mainview) and the chat header (chatview) can refresh.
+// Uses BROADCAST_SESSION_ID ("") — a sentinel for events not scoped to a
+// session. Subscribers that filter on sessionId must check for it explicitly.
 setModelsInvalidatedPusher((authMode) => {
 	const event: AgentEvent = { type: "models-cache-invalidated", authMode };
-	mainRpc.send.agentEvent({ sessionId: "", event });
-	chatRpc.send.agentEvent({ sessionId: "", event });
+	mainRpc.send.agentEvent({ sessionId: BROADCAST_SESSION_ID, event });
+	chatRpc.send.agentEvent({ sessionId: BROADCAST_SESSION_ID, event });
 });
 
 // Wire the streaming sender so session-manager can push stream events to the

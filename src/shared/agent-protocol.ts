@@ -113,6 +113,18 @@ export interface TokenUsage {
 }
 
 // ---------------------------------------------------------------------------
+// Broadcast sentinel
+// ---------------------------------------------------------------------------
+
+/**
+ * Sentinel `sessionId` value used by main → renderer events that are
+ * not scoped to a particular session (e.g. `models-cache-invalidated`).
+ * Subscribers that filter strictly by sessionId would otherwise drop
+ * these broadcasts; check for this sentinel explicitly.
+ */
+export const BROADCAST_SESSION_ID = "";
+
+// ---------------------------------------------------------------------------
 // Events (main → renderer)
 // ---------------------------------------------------------------------------
 

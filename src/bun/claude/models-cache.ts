@@ -64,7 +64,7 @@ export async function getModels(
 	if (inflight) return inflight;
 
 	const epoch = generation.get(authMode) ?? 0;
-	const discoverFn = opts.discover ?? (() => discoverModels(authMode));
+	const discoverFn = opts.discover ?? (() => discoverModels());
 	const promise = discoverFn()
 		.then((models) => {
 			// Only honor the discovery if no invalidate() bumped our epoch in flight.
@@ -85,8 +85,7 @@ export async function getModels(
  * yields, read `initializationResult` to extract the model list, then close.
  * No SDK message is sent, so there is no inference cost.
  */
-async function discoverModels(authMode: ClaudeAuthMode): Promise<ModelInfo[]> {
-	void authMode;
+async function discoverModels(): Promise<ModelInfo[]> {
 	const settings = await loadSettings();
 	const claudePath = await findClaudeCli();
 	const mcpServers = await mcpLoader.resolve();
