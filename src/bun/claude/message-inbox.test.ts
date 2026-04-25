@@ -53,4 +53,20 @@ describe("createMessageInbox", () => {
 		inbox.close();
 		expect(() => inbox.push(userMsg("x"))).toThrow(/closed/i);
 	});
+
+	test("early loop exit does not permanently close the inbox", async () => {
+		const inbox = createMessageInbox();
+		inbox.push(userMsg("a"));
+		inbox.push(userMsg("b"));
+
+		// Break out of the loop after the first message — triggers return().
+		for await (const msg of inbox.iterable) {
+			void msg;
+			break;
+		}
+
+		// After the break, the inbox should still accept pushes.
+		expect(() => inbox.push(userMsg("c"))).not.toThrow();
+		inbox.close();
+	});
 });
