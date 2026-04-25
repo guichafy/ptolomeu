@@ -233,6 +233,7 @@ export async function startStreamingLoop(
 			if (!sdkSessionIdRecorded) {
 				const candidate = (msg as { session_id?: unknown }).session_id;
 				if (typeof candidate === "string" && candidate.length > 0) {
+					sdkSessionIdRecorded = true; // latch FIRST
 					try {
 						hooks.onSdkSessionId?.(candidate);
 					} catch (hookErr) {
@@ -241,7 +242,6 @@ export async function startStreamingLoop(
 							hookErr,
 						);
 					}
-					sdkSessionIdRecorded = true;
 				}
 			}
 

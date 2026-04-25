@@ -387,6 +387,12 @@ const persister: MessagePersister = {
 };
 
 /**
+ * Persist the SDK-issued session id captured from the first SDKMessage. Called
+ * at most once per streaming loop (the streaming loop's own `sdkSessionIdRecorded`
+ * latch enforces single-fire). Concurrent invocations would create a TOCTOU
+ * between `readIndex` and `writeIndex`; the latch is the only thing preventing
+ * that race today, so don't add new callers without revisiting.
+ *
  * Called by the streaming loop's `onSdkSessionId` hook when the SDK reveals
  * its own session id on the first message. Updates the index only when the
  * value actually changes (the placeholder UUID is replaced exactly once).
