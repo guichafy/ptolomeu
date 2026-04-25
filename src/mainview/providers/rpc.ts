@@ -277,6 +277,13 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 				params: { sessionId?: string };
 				response: boolean;
 			};
+			claudeListSupportedModels: {
+				params: void;
+				response: {
+					models: import("@/shared/agent-protocol").ProtocolModelInfo[];
+					authMode: ClaudeAuthMode;
+				};
+			};
 			agentApproveTool: {
 				params: {
 					permissionId: string;

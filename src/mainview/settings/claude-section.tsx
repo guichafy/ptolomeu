@@ -1,5 +1,6 @@
 import { Loader2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ModelPicker } from "@/components/claude/model-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import type { ProtocolModelInfo } from "@/shared/agent-protocol";
 import {
 	type ClaudeAuthMode,
 	type ClaudeAuthStatus,
@@ -49,6 +51,10 @@ export function ClaudeSection() {
 		settings?.claude?.permissionMode ?? "acceptEdits",
 	);
 
+	// Model list (fetched from SDK on mount)
+	const [models, setModels] = useState<ProtocolModelInfo[]>([]);
+	const [loadingModels, setLoadingModels] = useState(true);
+
 	// Sessions
 	const [sessionCount, setSessionCount] = useState(0);
 	const [clearingHistory, setClearingHistory] = useState(false);
@@ -61,6 +67,26 @@ export function ClaudeSection() {
 			setPermissionMode(settings.claude.permissionMode);
 		}
 	}, [settings?.claude]);
+
+	// Fetch model list once on mount
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			setLoadingModels(true);
+			try {
+				const res = await rpc.request.claudeListSupportedModels();
+				if (!cancelled) setModels(res.models);
+			} catch (err) {
+				console.warn("[settings] claudeListSupportedModels failed:", err);
+				if (!cancelled) setModels([]);
+			} finally {
+				if (!cancelled) setLoadingModels(false);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
 	const refreshAuth = useCallback(async () => {
 		try {
@@ -353,18 +379,14 @@ export function ClaudeSection() {
 			{/* Modelo Padrão */}
 			<div className="flex flex-col gap-2.5">
 				<h3 className="text-sm font-semibold">Modelo Padrão</h3>
-				<Select value={model} onValueChange={handleModelChange}>
-					<SelectTrigger className="h-8 text-xs">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="claude-opus-4-6">Claude Opus 4.6</SelectItem>
-						<SelectItem value="claude-sonnet-4-6">Claude Sonnet 4.6</SelectItem>
-						<SelectItem value="claude-haiku-4-5-20251001">
-							Claude Haiku 4.5
-						</SelectItem>
-					</SelectContent>
-				</Select>
+				<ModelPicker
+					variant="default"
+					value={model}
+					models={models}
+					onChange={handleModelChange}
+					disabled={loadingModels && models.length === 0}
+					placeholder="Modelo padrão"
+				/>
 			</div>
 
 			<Separator className="opacity-40" />
