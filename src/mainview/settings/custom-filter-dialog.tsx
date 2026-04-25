@@ -15,8 +15,8 @@ import { TeamReposPreview } from "../components/team-repos-preview";
 import type { CustomFilter, GitHubSearchType } from "../providers/github/types";
 import { rpc } from "../providers/rpc";
 
-const SETTINGS_HEIGHT = 720;
-const SETTINGS_WIDTH = 820;
+const SETTINGS_HEIGHT = 760;
+const SETTINGS_WIDTH = 1080;
 const FILTER_DIALOG_HEIGHT_TEAM = 740;
 const FILTER_DIALOG_HEIGHT_SEARCH = 780;
 

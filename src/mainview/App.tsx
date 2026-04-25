@@ -23,8 +23,8 @@ import { SettingsDialog } from "./settings/settings-dialog";
 
 const COLLAPSED_HEIGHT = 120;
 const EXPANDED_HEIGHT = 440;
-const SETTINGS_HEIGHT = 720;
-const SETTINGS_WIDTH = 820;
+const SETTINGS_HEIGHT = 760;
+const SETTINGS_WIDTH = 1080;
 const DEFAULT_WIDTH = 630;
 
 function PaletteContent() {
