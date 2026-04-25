@@ -66,6 +66,11 @@ export type MessagePersister = {
 	) => Promise<void>;
 };
 
+export interface StreamingHooks {
+	/** Fires once a `result` SDKMessage has been fully processed and persisted. */
+	onTurnComplete?: () => void;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -181,10 +186,11 @@ function extractToolResultsFromUserMessage(
  * errors (e.g. max turns) are forwarded as `agentEvent` `finish`/`error`.
  */
 export async function startStreamingLoop(
-	session: { stream(): AsyncGenerator<SDKMessage, void> },
+	stream: AsyncIterable<SDKMessage>,
 	sessionId: string,
 	sender: StreamMessageSender,
 	persister: MessagePersister,
+	hooks: StreamingHooks = {},
 ): Promise<void> {
 	const t0 = Date.now();
 	console.log(`[claude:stream] loop start: sessionId=${sessionId}`);
@@ -207,7 +213,7 @@ export async function startStreamingLoop(
 	}
 
 	try {
-		for await (const msg of session.stream()) {
+		for await (const msg of stream) {
 			chunkCount++;
 			verbose(
 				`[claude:stream] chunk #${chunkCount}: sessionId=${sessionId} type=${msg.type}`,
@@ -363,6 +369,7 @@ export async function startStreamingLoop(
 
 				accumulatedBlocks = [];
 				toolElapsed.clear();
+				hooks.onTurnComplete?.();
 			}
 		}
 
