@@ -25,6 +25,9 @@
 		"test:e2e": "vitest run --config vitest.config.e2e.ts",
 		"build:dev-bundle": "bun run build:native && bun run build:vite && bunx electrobun build --env=dev",
 		"screenshots": "bun run build:dev-bundle && vitest run --config vitest.config.e2e.ts",
+		"dev:site": "cd site && bun run dev",
+		"build:site": "cd site && bun install --frozen-lockfile && bun run build",
+		"preview:site": "cd site && bun run preview",
 		"appium:install-driver": "appium driver list --installed 2>&1 | grep -q mac2 || appium driver install mac2",
 		"prepare": "lefthook install || true"
 	},
