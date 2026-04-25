@@ -18,6 +18,7 @@ import {
 	type ClaudeAuthMode,
 	type ClaudeAuthStatus,
 	type ClaudePermissionMode,
+	onAgentEvent,
 	rpc,
 } from "../providers/rpc";
 import { McpServersSection } from "./mcp-servers";
@@ -68,10 +69,10 @@ export function ClaudeSection() {
 		}
 	}, [settings?.claude]);
 
-	// Fetch model list once on mount
+	// Fetch model list on mount and re-fetch when models cache is invalidated
 	useEffect(() => {
 		let cancelled = false;
-		(async () => {
+		const refresh = async () => {
 			setLoadingModels(true);
 			try {
 				const res = await rpc.request.claudeListSupportedModels();
@@ -82,9 +83,16 @@ export function ClaudeSection() {
 			} finally {
 				if (!cancelled) setLoadingModels(false);
 			}
-		})();
+		};
+		refresh();
+		const unsubscribe = onAgentEvent((args) => {
+			if (args.event.type === "models-cache-invalidated") {
+				refresh();
+			}
+		});
 		return () => {
 			cancelled = true;
+			unsubscribe();
 		};
 	}, []);
 
