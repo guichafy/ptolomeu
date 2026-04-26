@@ -105,6 +105,11 @@ const BASH_WRITE_PATTERNS: RegExp[] = [
 	/(?:\d+|&)?>>?\|?\s*[^&\s]/,
 ];
 
+// Comandos cujo argumento posicional típico é um caminho de arquivo a ser
+// criado/alterado. `sed`/`awk` ficam de fora porque o primeiro posicional é
+// um script (frequentemente quoted como `/regex/`), o que produziria falsos
+// positivos. Redirects (`>`, `>>`) e o caso `dd of=` continuam cobertos por
+// extractRedirectTargets/extractRelativeWriteTargets.
 const PATH_ARG_COMMANDS = new Set([
 	"rm",
 	"mv",
@@ -117,8 +122,6 @@ const PATH_ARG_COMMANDS = new Set([
 	"ln",
 	"truncate",
 	"tee",
-	"sed",
-	"awk",
 	"dd",
 ]);
 

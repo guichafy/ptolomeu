@@ -1021,6 +1021,15 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 	});
 	if (!removal) return false;
 
+	// Drain qualquer escrita pendente desta sessão antes de remover o
+	// diretório, senão a fila recria arquivos depois do rm. Em seguida,
+	// libera a entrada do mapa para não vazar memória por sessão criada.
+	const pendingWrite = messageWriteQueues.get(sessionId);
+	if (pendingWrite) {
+		await pendingWrite.catch(() => {});
+		messageWriteQueues.delete(sessionId);
+	}
+
 	// Remove session directory
 	const dir = sessionDir(sessionId);
 	try {
