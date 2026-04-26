@@ -235,13 +235,6 @@ if (tray.ptr) {
 	overlayLib.symbols.setTrayLength(tray.ptr, 28);
 }
 
-tray.setMenu([
-	{ type: "normal", label: "Abrir", action: "open-window" },
-	{ type: "normal", label: "Preferências...", action: "open-preferences" },
-	{ type: "separator" },
-	{ type: "normal", label: "Sair", action: "quit" },
-]);
-
 tray.on("tray-clicked", (event: any) => {
 	const action = event.data?.action;
 
@@ -262,11 +255,38 @@ tray.on("tray-clicked", (event: any) => {
 
 // Register global hotkey (Command+Shift+Space) via Carbon API in native code
 const hotkeyStatus = overlayLib.symbols.registerHotkey(mainWindow.ptr);
-if (hotkeyStatus !== 0) {
+const hotkeyOk = hotkeyStatus === 0;
+if (!hotkeyOk) {
 	console.warn(
 		`[main] failed to register global hotkey Command+Shift+Space (OSStatus ${hotkeyStatus})`,
 	);
+	trackEvent("hotkey_register_failed", { status: hotkeyStatus });
 }
+
+const baseMenu = [
+	{ type: "normal" as const, label: "Abrir", action: "open-window" },
+	{
+		type: "normal" as const,
+		label: "Preferências...",
+		action: "open-preferences",
+	},
+	{ type: "separator" as const },
+	{ type: "normal" as const, label: "Sair", action: "quit" },
+];
+
+tray.setMenu(
+	hotkeyOk
+		? baseMenu
+		: [
+				{
+					type: "normal" as const,
+					label: "⚠️ Atalho ⌘⇧Espaço indisponível",
+					enabled: false,
+				},
+				{ type: "separator" as const },
+				...baseMenu,
+			],
+);
 
 // Native-side notification for when the hotkey transitions the window from
 // hidden to visible. The Electrobun `focus` event should cover this too, but
