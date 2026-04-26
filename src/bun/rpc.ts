@@ -216,6 +216,19 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 	};
 }
 
+type BunRequests = PtolomeuRPCSchema["bun"]["requests"];
+type RequestParams<K extends keyof BunRequests> = BunRequests[K]["params"];
+type RequestResponse<K extends keyof BunRequests> = Awaited<
+	BunRequests[K]["response"]
+>;
+type BunRequestHandlers = {
+	[K in keyof BunRequests]: (
+		...args: undefined extends RequestParams<K>
+			? [params?: RequestParams<K>]
+			: [params: RequestParams<K>]
+	) => RequestResponse<K> | Promise<RequestResponse<K>>;
+};
+
 // Callback for opening chat window (set from index.ts)
 let openChatCallback: ((sessionId?: string) => void) | null = null;
 export function setOpenChatCallback(cb: (sessionId?: string) => void) {
@@ -388,7 +401,7 @@ async function invalidateModelsCache(authMode: ClaudeAuthMode): Promise<void> {
 // one directly with mocked module deps, without having to spin up the
 // Electrobun RPC transport. The object shape is validated against
 // `PtolomeuRPCSchema` when it's passed to `defineElectrobunRPC` below.
-export const requestHandlers = {
+export const requestHandlers: BunRequestHandlers = {
 	listApps: async () => {
 		return scanApps();
 	},
@@ -514,7 +527,7 @@ export const requestHandlers = {
 		await initProxy("auto");
 		return true;
 	},
-	testProxyConnection: async ({ testUrl }) => {
+	testProxyConnection: async ({ testUrl } = {}) => {
 		const url = testUrl ?? "https://api.github.com";
 		const started = Date.now();
 		try {

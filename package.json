@@ -19,6 +19,7 @@
 		"build:release": "bun run build:native && bun run build:vite && electrobun build --env=stable",
 		"lint": "bunx biome check .",
 		"lint:fix": "bunx biome check --write .",
+		"typecheck": "bunx tsc --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",

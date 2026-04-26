@@ -61,7 +61,9 @@ describe("webSearchProvider", () => {
 
 	it("onSelect opens the URL in a new tab via window.open", async () => {
 		const results = await webSearchProvider.search("foo");
-		const open = (globalThis.window as { open: ReturnType<typeof vi.fn> }).open;
+		const open = (
+			globalThis.window as unknown as { open: ReturnType<typeof vi.fn> }
+		).open;
 		results[0].onSelect();
 		expect(open).toHaveBeenCalledWith(
 			"https://www.google.com/search?q=foo",

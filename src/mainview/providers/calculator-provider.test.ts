@@ -75,7 +75,7 @@ describe("calculatorProvider", () => {
 	it("onSelect writes formatted result to clipboard", async () => {
 		const [res] = await calculatorProvider.search("6 * 7");
 		const writeText = (
-			globalThis.navigator as {
+			globalThis.navigator as unknown as {
 				clipboard: { writeText: ReturnType<typeof vi.fn> };
 			}
 		).clipboard.writeText;
