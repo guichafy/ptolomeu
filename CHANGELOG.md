@@ -1,3 +1,12 @@
+## [0.10.2](https://github.com/guichafy/ptolomeu/compare/v0.10.1...v0.10.2) (2026-04-26)
+
+
+### Bug Fixes
+
+* apply PR [#23](https://github.com/guichafy/ptolomeu/issues/23) review follow-ups ([e95a03c](https://github.com/guichafy/ptolomeu/commit/e95a03c40ae0fbd2937e7f28a8bbc0b875719240))
+* **core:** harden session safety and persistence ([b76eec2](https://github.com/guichafy/ptolomeu/commit/b76eec2c01e0d05a81377cf64566b1105e0a221f))
+* **native:** clean up hotkey lifecycle ([678b2b0](https://github.com/guichafy/ptolomeu/commit/678b2b069c09b65af2fe2631cd3fa74edb242121))
+
 ## [0.10.1](https://github.com/guichafy/ptolomeu/compare/v0.10.0...v0.10.1) (2026-04-25)
 
 
