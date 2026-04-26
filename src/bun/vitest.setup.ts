@@ -8,8 +8,8 @@ if (typeof globalThis.Bun === "undefined") {
 		spawn: vi.fn(() => {
 			throw new Error("Bun.spawn not mocked in this test");
 		}),
-		// Bridge Bun.file / Bun.write to Node fs so that loadSettings() works
-		// in tests that don't mock the settings module (e.g. models-cache tests).
+		// Bridge Bun.file / Bun.write for modules that still use Bun's fs APIs
+		// in tests that don't mock those modules.
 		file: (path: string) => ({
 			exists: async () => {
 				try {

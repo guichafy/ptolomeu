@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,8 +19,7 @@ vi.mock("node:os", async () => {
 	return { ...actual, homedir: () => fakeHome.path };
 });
 
-// `settings.ts` reads/writes via `Bun.file`/`Bun.write`. In the vitest env
-// we only shim `Bun.spawn`; the other two need real-fs bridges.
+// Some bun-side modules still expect Bun.file/Bun.write in the vitest env.
 function installBunFsShim() {
 	(globalThis as unknown as { Bun: Record<string, unknown> }).Bun = {
 		spawn: vi.fn(),
@@ -115,6 +121,10 @@ describe("settings I/O", () => {
 
 		const raw = await readFile(p, "utf8");
 		expect(() => JSON.parse(raw)).not.toThrow();
+		const files = await readdir(join(p, ".."));
+		expect(
+			files.some((name) => name.startsWith("settings.json.corrupt-")),
+		).toBe(true);
 	});
 
 	it("recovers from a valid-JSON but schema-invalid file", async () => {
@@ -130,6 +140,31 @@ describe("settings I/O", () => {
 		const loaded = await loadSettings();
 		expect(loaded.version).toBe(1);
 		expect(loaded.plugins.enabledOrder).toContain("github");
+		const files = await readdir(join(p, ".."));
+		expect(
+			files.some((name) => name.startsWith("settings.json.corrupt-")),
+		).toBe(true);
+	});
+
+	it("handles concurrent saves without leaving partial JSON", async () => {
+		const { loadSettings, saveSettings } = await import("./settings");
+		const initial = await loadSettings();
+
+		await Promise.all([
+			saveSettings({
+				...initial,
+				plugins: { enabledOrder: ["apps", "github"] },
+			}),
+			saveSettings({
+				...initial,
+				plugins: { enabledOrder: ["calc", "web"] },
+			}),
+		]);
+
+		const raw = await readFile(settingsPath(), "utf8");
+		expect(() => JSON.parse(raw)).not.toThrow();
+		const reloaded = await loadSettings();
+		expect(reloaded.plugins.enabledOrder.length).toBeGreaterThanOrEqual(1);
 	});
 
 	it("saveSettings rejects invalid input without touching the file", async () => {

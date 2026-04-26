@@ -1,6 +1,8 @@
-import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { backupCorruptJson, writeJsonAtomic } from "./atomic-json";
 
 export const KNOWN_PLUGIN_IDS = [
 	"apps",
@@ -345,28 +347,32 @@ export function getSettingsPath(): string {
 	);
 }
 
-async function writeDefaults(path: string): Promise<Settings> {
+async function writeDefaults(
+	path: string,
+	options: { backupExisting?: boolean } = {},
+): Promise<Settings> {
 	const defaults = structuredClone(DEFAULT_SETTINGS);
-	await mkdir(dirname(path), { recursive: true });
-	await Bun.write(path, JSON.stringify(defaults, null, 2));
+	if (options.backupExisting) {
+		await backupCorruptJson(path);
+	}
+	await writeJsonAtomic(path, defaults);
 	return defaults;
 }
 
 export async function loadSettings(): Promise<Settings> {
 	const path = getSettingsPath();
-	const file = Bun.file(path);
-	if (!(await file.exists())) {
+	if (!existsSync(path)) {
 		return writeDefaults(path);
 	}
 	try {
-		const parsed = JSON.parse(await file.text());
+		const parsed = JSON.parse(await readFile(path, "utf8"));
 		const result = validateSettings(parsed);
 		if (!result.ok || !result.value) {
-			return writeDefaults(path);
+			return writeDefaults(path, { backupExisting: true });
 		}
 		return result.value;
 	} catch {
-		return writeDefaults(path);
+		return writeDefaults(path, { backupExisting: true });
 	}
 }
 
@@ -375,8 +381,7 @@ export async function saveSettings(next: Settings): Promise<boolean> {
 	if (!result.ok) return false;
 	const path = getSettingsPath();
 	try {
-		await mkdir(dirname(path), { recursive: true });
-		await Bun.write(path, JSON.stringify(result.value, null, 2));
+		await writeJsonAtomic(path, result.value);
 		return true;
 	} catch {
 		return false;

@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -17,9 +17,11 @@ import type {
 	DecisionSource,
 } from "@/bun/claude/permission-gate";
 import type { RiskLevel } from "@/bun/claude/risk-classifier";
+import { backupCorruptJson, writeJsonAtomic } from "../../atomic-json";
 
 export interface StoredToolDecision {
 	version: 1;
+	sessionId: string;
 	permissionId: string;
 	toolCallId: string;
 	toolName: string;
@@ -55,6 +57,7 @@ export class ToolDecisionStore {
 	async append(sessionId: string, record: DecisionRecord): Promise<void> {
 		const stored: StoredToolDecision = {
 			version: 1,
+			sessionId,
 			permissionId: record.permissionId,
 			toolCallId: record.toolCallId,
 			toolName: record.toolName,
@@ -91,7 +94,7 @@ export class ToolDecisionStore {
 		await mkdir(dir, { recursive: true });
 		const existing = await this.readRaw(sessionId);
 		existing.push(record);
-		await writeFile(this.path(sessionId), JSON.stringify(existing, null, 2));
+		await writeJsonAtomic(this.path(sessionId), existing);
 	}
 
 	private async readRaw(sessionId: string): Promise<StoredToolDecision[]> {
@@ -102,6 +105,7 @@ export class ToolDecisionStore {
 			if (!Array.isArray(parsed)) return [];
 			return parsed as StoredToolDecision[];
 		} catch {
+			await backupCorruptJson(path);
 			return [];
 		}
 	}

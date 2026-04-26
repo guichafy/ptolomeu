@@ -36,6 +36,7 @@ describe("PermissionGate", () => {
 
 	const makeRequest = (gate: PermissionGate, overrides = {}) =>
 		gate.request({
+			sessionId: "s1",
 			toolCallId: "t1",
 			toolName: "Bash",
 			args: { cmd: "ls" },
@@ -49,6 +50,7 @@ describe("PermissionGate", () => {
 			expect(permissionId).toBe("perm_1");
 			expect(request).toMatchObject({
 				permissionId: "perm_1",
+				sessionId: "s1",
 				createdAt: now(),
 				toolCallId: "t1",
 				toolName: "Bash",
@@ -195,6 +197,20 @@ describe("PermissionGate", () => {
 			const gate = makeGate();
 			expect(gate.cancelAll()).toBe(0);
 		});
+
+		it("cancelAll can target one session without touching another", async () => {
+			const gate = makeGate();
+			const a = makeRequest(gate, { sessionId: "s1", toolCallId: "tA" });
+			const b = makeRequest(gate, { sessionId: "s2", toolCallId: "tB" });
+			expect(gate.cancelAll("aborted s1", "s1")).toBe(1);
+			await expect(a.promise).resolves.toEqual({
+				behavior: "deny",
+				message: "aborted s1",
+			});
+			expect(gate.size).toBe(1);
+			gate.reject(b.permissionId);
+			await b.promise;
+		});
 	});
 
 	describe("risk classifier on request", () => {
@@ -211,6 +227,7 @@ describe("PermissionGate", () => {
 				now,
 			});
 			const { request } = gate.request({
+				sessionId: "s1",
 				toolCallId: "t1",
 				toolName: "Bash",
 				args: { command: "rm -rf /tmp/foo" },
@@ -240,6 +257,18 @@ describe("PermissionGate", () => {
 			const b = makeRequest(gate); // same toolName + args
 			await expect(b.promise).resolves.toEqual({ behavior: "allow" });
 			expect(gate.size).toBe(0); // never hit the pending map
+		});
+
+		it("does not share whitelist entries across sessions", async () => {
+			const gate = makeGate();
+			const a = makeRequest(gate, { sessionId: "s1" });
+			gate.approve(a.permissionId, "always-allow-this-session");
+			await a.promise;
+
+			const b = makeRequest(gate, { sessionId: "s2" });
+			expect(gate.size).toBe(1);
+			gate.reject(b.permissionId);
+			await b.promise;
 		});
 
 		it("dangerous tools bypass the whitelist — even after always-allow, next request still prompts", async () => {
@@ -282,6 +311,18 @@ describe("PermissionGate", () => {
 			gate.clearWhitelist();
 			expect(gate.whitelistSize).toBe(0);
 		});
+
+		it("clearWhitelist can clear only one session", async () => {
+			const gate = makeGate();
+			const a = makeRequest(gate, { sessionId: "s1" });
+			const b = makeRequest(gate, { sessionId: "s2", args: { cmd: "pwd" } });
+			gate.approve(a.permissionId, "always-allow-this-session");
+			gate.approve(b.permissionId, "always-allow-this-session");
+			await Promise.all([a.promise, b.promise]);
+			expect(gate.whitelistSize).toBe(2);
+			gate.clearWhitelist("s1");
+			expect(gate.whitelistSize).toBe(1);
+		});
 	});
 
 	describe("onDecision audit hook", () => {
@@ -294,6 +335,7 @@ describe("PermissionGate", () => {
 			expect(records).toHaveLength(1);
 			expect(records[0]).toMatchObject({
 				permissionId: "perm_1",
+				sessionId: "s1",
 				toolName: "Bash",
 				source: "user-approved",
 				decision: { behavior: "allow" },

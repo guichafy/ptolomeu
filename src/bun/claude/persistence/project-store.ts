@@ -14,9 +14,10 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
+import { backupCorruptJson, writeJsonAtomic } from "../../atomic-json";
 
 const SLUG_MAX = 40;
 const SHORTID_LEN = 6;
@@ -140,8 +141,10 @@ export class ProjectStore {
 			) {
 				return parsed as ProjectIndex;
 			}
+			await backupCorruptJson(path);
 			return { version: 1, projects: [] };
 		} catch {
+			await backupCorruptJson(path);
 			return { version: 1, projects: [] };
 		}
 	}
@@ -151,7 +154,7 @@ export class ProjectStore {
 			await mkdir(this.root, { recursive: true });
 			const index = await this.readIndex();
 			apply(index);
-			await writeFile(this.indexPath(), JSON.stringify(index, null, 2));
+			await writeJsonAtomic(this.indexPath(), index);
 		});
 		this.writeQueue = next.catch(() => {});
 		return next;
