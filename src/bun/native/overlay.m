@@ -1,6 +1,5 @@
 #import <AppKit/AppKit.h>
 #import <Carbon/Carbon.h>
-#include <signal.h>
 
 // Delegate that hides the window instead of closing it
 @interface OverlayWindowDelegate : NSObject <NSWindowDelegate>
@@ -18,7 +17,6 @@
 - (void)windowDidResignKey:(NSNotification *)notification {
     NSWindow *window = notification.object;
     [window orderOut:nil];
-    [NSApp hide:nil];
 }
 
 // Forward any other delegate methods to the original delegate
@@ -41,6 +39,7 @@
 static OverlayWindowDelegate *overlayDelegate = nil;
 static NSWindow *registeredWindow = nil;
 static EventHotKeyRef hotKeyRef = NULL;
+static EventHandlerRef hotKeyHandlerRef = NULL;
 
 // Callback invoked from native back into bun whenever the overlay window
 // transitions from hidden to visible (hotkey-triggered show). Bun registers
@@ -95,8 +94,18 @@ void makeWindowOverlay(void *nsWindowPtr) {
             NSWindowCollectionBehaviorFullScreenAuxiliary];
         [window setLevel:NSStatusWindowLevel];
 
-        // Center window on the current screen
-        NSScreen *screen = [NSScreen mainScreen];
+        // Center window on the screen under the pointer, falling back to main.
+        NSScreen *screen = nil;
+        NSPoint mouse = [NSEvent mouseLocation];
+        for (NSScreen *candidate in [NSScreen screens]) {
+            if (NSPointInRect(mouse, [candidate frame])) {
+                screen = candidate;
+                break;
+            }
+        }
+        if (!screen) {
+            screen = [NSScreen mainScreen];
+        }
         if (screen) {
             NSRect screenFrame = [screen visibleFrame];
             NSRect windowFrame = [window frame];
@@ -111,8 +120,8 @@ void makeWindowOverlay(void *nsWindowPtr) {
 }
 
 
-void registerHotkey(void *nsWindowPtr) {
-    if (!nsWindowPtr) return;
+int registerHotkey(void *nsWindowPtr) {
+    if (!nsWindowPtr) return paramErr;
     registeredWindow = (__bridge NSWindow *)nsWindowPtr;
 
     if (hotKeyRef) {
@@ -120,8 +129,14 @@ void registerHotkey(void *nsWindowPtr) {
         hotKeyRef = NULL;
     }
 
-    EventTypeSpec eventType = { kEventClassKeyboard, kEventHotKeyPressed };
-    InstallApplicationEventHandler(&hotkeyHandler, 1, &eventType, NULL, NULL);
+    if (!hotKeyHandlerRef) {
+        EventTypeSpec eventType = { kEventClassKeyboard, kEventHotKeyPressed };
+        OSStatus handlerStatus = InstallApplicationEventHandler(&hotkeyHandler, 1, &eventType, NULL, &hotKeyHandlerRef);
+        if (handlerStatus != noErr) {
+            NSLog(@"[Hotkey] Failed to install hotkey handler: %d", (int)handlerStatus);
+            return (int)handlerStatus;
+        }
+    }
 
     // Command+Shift+Space: kVK_Space=49, cmdKey+shiftKey
     EventHotKeyID hotKeyID = { 'PTol', 1 };
@@ -133,6 +148,20 @@ void registerHotkey(void *nsWindowPtr) {
     } else {
         NSLog(@"[Hotkey] Failed to register hotkey: %d", (int)status);
     }
+    return (int)status;
+}
+
+void unregisterHotkey(void) {
+    if (hotKeyRef) {
+        UnregisterEventHotKey(hotKeyRef);
+        hotKeyRef = NULL;
+    }
+    if (hotKeyHandlerRef) {
+        RemoveEventHandler(hotKeyHandlerRef);
+        hotKeyHandlerRef = NULL;
+    }
+    registeredWindow = nil;
+    windowShowCallback = NULL;
 }
 
 // Override the NSStatusItem length to control the menu bar slot width.
@@ -162,7 +191,8 @@ void setTrayLength(void *trayPtr, double length) {
 }
 
 void quitApp(void) {
-    // Kill the entire process group (app + watcher + parent scripts)
-    kill(0, SIGTERM);
-    _exit(0);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        unregisterHotkey();
+        [NSApp terminate:nil];
+    });
 }

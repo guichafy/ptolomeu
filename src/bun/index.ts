@@ -25,6 +25,10 @@ const overlaySymbols = {
 	},
 	registerHotkey: {
 		args: [FFIType.ptr],
+		returns: FFIType.i32,
+	},
+	unregisterHotkey: {
+		args: [],
 		returns: FFIType.void,
 	},
 	setWindowShowCallback: {
@@ -257,7 +261,12 @@ tray.on("tray-clicked", (event: any) => {
 });
 
 // Register global hotkey (Command+Shift+Space) via Carbon API in native code
-overlayLib.symbols.registerHotkey(mainWindow.ptr);
+const hotkeyStatus = overlayLib.symbols.registerHotkey(mainWindow.ptr);
+if (hotkeyStatus !== 0) {
+	console.warn(
+		`[main] failed to register global hotkey Command+Shift+Space (OSStatus ${hotkeyStatus})`,
+	);
+}
 
 // Native-side notification for when the hotkey transitions the window from
 // hidden to visible. The Electrobun `focus` event should cover this too, but
@@ -276,5 +285,13 @@ const windowShowCallback = new JSCallback(
 	},
 );
 overlayLib.symbols.setWindowShowCallback(windowShowCallback.ptr);
+
+process.on("exit", () => {
+	try {
+		overlayLib.symbols.unregisterHotkey();
+	} catch {
+		// Native cleanup is best-effort during process teardown.
+	}
+});
 
 console.log("System tray app started!");
