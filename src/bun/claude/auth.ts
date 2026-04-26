@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
+import { writeJsonAtomic } from "../atomic-json";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -212,13 +213,13 @@ export async function setBedrockConfig(
 ): Promise<boolean> {
 	if (!isBedrockConfig(config)) return false;
 	try {
-		await ensureAuthDir();
 		const data: BedrockConfig = {
 			endpoint: config.endpoint.trim(),
 			profile: config.profile.trim(),
 			region: config.region.trim(),
 		};
-		await Bun.write(BEDROCK_PATH, JSON.stringify(data, null, 2));
+		await ensureAuthDir();
+		await writeJsonAtomic(BEDROCK_PATH, data);
 		return true;
 	} catch {
 		return false;

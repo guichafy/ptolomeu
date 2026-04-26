@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -9,6 +10,7 @@ import type {
 	SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { backupCorruptJson, writeJsonAtomic } from "../atomic-json";
 import { loadSettings } from "../settings";
 import { findClaudeCli } from "./claude-cli";
 import { mcpLoader } from "./mcp-loader";
@@ -193,9 +195,7 @@ const toolDecisionStore = new ToolDecisionStore();
 
 const permissionGate = new PermissionGate({
 	onDecision: (record) => {
-		if (!active) return;
-		const sessionId = active.sessionId;
-		toolDecisionStore.append(sessionId, record).catch((err) => {
+		toolDecisionStore.append(record.sessionId, record).catch((err) => {
 			console.error("[claude:permission] audit write failed:", err);
 		});
 	},
@@ -226,9 +226,10 @@ function buildCanUseTool(sessionId: string, workspace: string): CanUseTool {
 		}
 
 		const { permissionId, request, promise } = permissionGate.request({
+			sessionId,
 			toolCallId: options.toolUseID,
 			toolName,
-			args: input,
+			args: input as Record<string, unknown>,
 			decisionReason: options.decisionReason,
 			blockedPath: options.blockedPath,
 		});
@@ -261,13 +262,15 @@ async function ensureSessionsDir(): Promise<void> {
 	await mkdir(SESSIONS_DIR, { recursive: true });
 }
 
-async function readIndex(): Promise<SessionIndex> {
-	const file = Bun.file(INDEX_PATH);
-	if (!(await file.exists())) {
+let indexWriteQueue: Promise<void> = Promise.resolve();
+const messageWriteQueues = new Map<string, Promise<void>>();
+
+async function readIndexRaw(): Promise<SessionIndex> {
+	if (!existsSync(INDEX_PATH)) {
 		return { version: 2, sessions: [] };
 	}
 	try {
-		const parsed = JSON.parse(await file.text());
+		const parsed = JSON.parse(await readFile(INDEX_PATH, "utf8"));
 		if (
 			parsed &&
 			typeof parsed === "object" &&
@@ -279,15 +282,38 @@ async function readIndex(): Promise<SessionIndex> {
 		// Legacy (v1 or malformed) — start fresh. Old session folders remain on
 		// disk but are not listed; users can `rm -rf ~/.ptolomeu/sessions`
 		// manually if they care about reclaiming the space.
+		await backupCorruptJson(INDEX_PATH);
 		return { version: 2, sessions: [] };
 	} catch {
+		await backupCorruptJson(INDEX_PATH);
 		return { version: 2, sessions: [] };
 	}
 }
 
-async function writeIndex(index: SessionIndex): Promise<void> {
+async function readIndex(): Promise<SessionIndex> {
+	await indexWriteQueue;
+	return readIndexRaw();
+}
+
+async function writeIndexRaw(index: SessionIndex): Promise<void> {
 	await ensureSessionsDir();
-	await Bun.write(INDEX_PATH, JSON.stringify(index, null, 2));
+	await writeJsonAtomic(INDEX_PATH, index);
+}
+
+async function mutateIndex<T>(
+	apply: (index: SessionIndex) => T | Promise<T>,
+): Promise<T> {
+	const next = indexWriteQueue.then(async () => {
+		const index = await readIndexRaw();
+		const result = await apply(index);
+		await writeIndexRaw(index);
+		return result;
+	});
+	indexWriteQueue = next.then(
+		() => {},
+		() => {},
+	);
+	return next;
 }
 
 function sessionDir(sessionId: string): string {
@@ -308,16 +334,25 @@ function messagesPath(sessionId: string): string {
 	return join(sessionDir(sessionId), "messages.json");
 }
 
-async function readMessages(sessionId: string): Promise<StoredMessageV2[]> {
-	const file = Bun.file(messagesPath(sessionId));
-	if (!(await file.exists())) return [];
+async function readMessagesRaw(sessionId: string): Promise<StoredMessageV2[]> {
+	const path = messagesPath(sessionId);
+	if (!existsSync(path)) return [];
 	try {
-		const parsed = JSON.parse(await file.text());
-		if (!Array.isArray(parsed)) return [];
+		const parsed = JSON.parse(await readFile(path, "utf8"));
+		if (!Array.isArray(parsed)) {
+			await backupCorruptJson(path);
+			return [];
+		}
 		return parsed.map((msg: StoredMessage) => migrateStoredMessage(msg));
 	} catch {
+		await backupCorruptJson(path);
 		return [];
 	}
+}
+
+async function readMessages(sessionId: string): Promise<StoredMessageV2[]> {
+	await (messageWriteQueues.get(sessionId) ?? Promise.resolve());
+	return readMessagesRaw(sessionId);
 }
 
 async function writeMessages(
@@ -326,32 +361,42 @@ async function writeMessages(
 ): Promise<void> {
 	const dir = sessionDir(sessionId);
 	await mkdir(dir, { recursive: true });
-	await Bun.write(messagesPath(sessionId), JSON.stringify(messages, null, 2));
+	await writeJsonAtomic(messagesPath(sessionId), messages);
 }
 
 async function appendStoredMessageV2(
 	sessionId: string,
 	msg: StoredMessageV2,
 ): Promise<void> {
-	const messages = await readMessages(sessionId);
-	messages.push(msg);
-	await writeMessages(sessionId, messages);
+	const next = (messageWriteQueues.get(sessionId) ?? Promise.resolve()).then(
+		async () => {
+			const messages = await readMessagesRaw(sessionId);
+			messages.push(msg);
+			await writeMessages(sessionId, messages);
 
-	const index = await readIndex();
-	const meta = index.sessions.find((s) => s.id === sessionId);
-	if (meta) {
-		meta.messageCount = messages.length;
-		meta.updatedAt = new Date().toISOString();
-		if (msg.role === "user") {
-			const preview = msg.blocks
-				.filter((b): b is { type: "text"; text: string } => b.type === "text")
-				.map((b) => b.text)
-				.join("")
-				.slice(0, 100);
-			meta.lastMessage = preview;
-		}
-		await writeIndex(index);
-	}
+			await mutateIndex((index) => {
+				const meta = index.sessions.find((s) => s.id === sessionId);
+				if (!meta) return;
+				meta.messageCount = messages.length;
+				meta.updatedAt = new Date().toISOString();
+				if (msg.role === "user") {
+					const preview = msg.blocks
+						.filter(
+							(b): b is { type: "text"; text: string } => b.type === "text",
+						)
+						.map((b) => b.text)
+						.join("")
+						.slice(0, 100);
+					meta.lastMessage = preview;
+				}
+			});
+		},
+	);
+	messageWriteQueues.set(
+		sessionId,
+		next.catch(() => {}),
+	);
+	return next;
 }
 
 /**
@@ -404,15 +449,15 @@ async function recordSdkSessionId(
 ): Promise<void> {
 	if (!sdkSessionId) return;
 	try {
-		const idx = await readIndex();
-		const m = idx.sessions.find((s) => s.id === internalId);
-		if (m && m.sdkSessionId !== sdkSessionId) {
-			verbose(
-				`[claude:session] recordSdkSessionId: id=${internalId} old=${m.sdkSessionId} new=${sdkSessionId}`,
-			);
-			m.sdkSessionId = sdkSessionId;
-			await writeIndex(idx);
-		}
+		await mutateIndex((idx) => {
+			const m = idx.sessions.find((s) => s.id === internalId);
+			if (m && m.sdkSessionId !== sdkSessionId) {
+				verbose(
+					`[claude:session] recordSdkSessionId: id=${internalId} old=${m.sdkSessionId} new=${sdkSessionId}`,
+				);
+				m.sdkSessionId = sdkSessionId;
+			}
+		});
 	} catch (err) {
 		console.error("[claude:session] recordSdkSessionId failed:", err);
 	}
@@ -478,6 +523,16 @@ async function primeModelsCacheFromQuery(
 	} catch (err) {
 		// init result not yet available or other transient failure; ignore.
 		verbose(`[claude:session] primeModelsCacheFromQuery skipped: ${err}`);
+	}
+}
+
+function clearSessionPermissionState(sessionId: string, reason: string): void {
+	const cancelled = permissionGate.cancelAll(reason, sessionId);
+	permissionGate.clearWhitelist(sessionId);
+	if (cancelled > 0) {
+		console.log(
+			`[claude:permission] cleared ${cancelled} pending requests for sessionId=${sessionId}`,
+		);
 	}
 }
 
@@ -606,9 +661,9 @@ export async function createSession(
 		lastMessage: prompt.slice(0, 100),
 	};
 
-	const index = await readIndex();
-	index.sessions.push(meta);
-	await writeIndex(index);
+	await mutateIndex((index) => {
+		index.sessions.push(meta);
+	});
 
 	await appendStoredMessageV2(id, {
 		version: 2,
@@ -693,6 +748,7 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 				turnCompletionQueue: [],
 			},
 		};
+		permissionGate.clearWhitelist(sessionId);
 		pendingNew = null;
 		void primeModelsCacheFromQuery(q, pendingAuthMode);
 		return startLoopForActive(sessionId);
@@ -728,9 +784,11 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 
 	try {
 		if (active && active.sessionId !== sessionId) {
+			const previousSessionId = active.sessionId;
 			console.log(
-				`[claude:session] resumeSession: tearing down prior active session ${active.sessionId} before cold resume of ${sessionId}`,
+				`[claude:session] resumeSession: tearing down prior active session ${previousSessionId} before cold resume of ${sessionId}`,
 			);
+			clearSessionPermissionState(previousSessionId, "session changed");
 			try {
 				active.q.inbox.close();
 				active.q.query.close();
@@ -755,7 +813,10 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 			);
 			model = cached[0].value;
 			meta.model = model;
-			await writeIndex(index);
+			await mutateIndex((idx) => {
+				const latest = idx.sessions.find((s) => s.id === sessionId);
+				if (latest) latest.model = model;
+			});
 			notifySessionModelChanged(sessionId, model);
 		}
 
@@ -776,6 +837,7 @@ export async function resumeSession(sessionId: string): Promise<boolean> {
 			sessionId,
 			q: { query: q, inbox, streamingLoop: null, turnCompletionQueue: [] },
 		};
+		permissionGate.clearWhitelist(sessionId);
 		void primeModelsCacheFromQuery(q, meta.authMode);
 
 		console.log(
@@ -887,12 +949,7 @@ export async function stopGeneration(): Promise<boolean> {
 
 	// Release any tool-permission promises the SDK is awaiting. The interrupt
 	// below races them; cancelling explicitly avoids leaking deny timers.
-	const cancelled = permissionGate.cancelAll("generation stopped");
-	if (cancelled > 0) {
-		console.log(
-			`[claude:session] stopGeneration: cancelled ${cancelled} pending permissions`,
-		);
-	}
+	clearSessionPermissionState(active.sessionId, "generation stopped");
 
 	try {
 		await active.q.query.interrupt();
@@ -938,6 +995,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 
 	const meta = index.sessions[idx];
 	const { projectId } = meta;
+	clearSessionPermissionState(sessionId, "session deleted");
 
 	// If this is the active session, close it and drain its streaming loop
 	// BEFORE touching files — otherwise the loop's final writes can land
@@ -955,9 +1013,13 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 		active = null;
 	}
 
-	// Remove from index
-	index.sessions.splice(idx, 1);
-	await writeIndex(index);
+	const removal = await mutateIndex((current) => {
+		const currentIdx = current.sessions.findIndex((s) => s.id === sessionId);
+		if (currentIdx === -1) return null;
+		current.sessions.splice(currentIdx, 1);
+		return [...current.sessions];
+	});
+	if (!removal) return false;
 
 	// Remove session directory
 	const dir = sessionDir(sessionId);
@@ -975,11 +1037,11 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 	const activeSessionIdSnap = active?.sessionId ?? null;
 	const activeOnProject =
 		activeSessionIdSnap !== null
-			? index.sessions.find((s) => s.id === activeSessionIdSnap)?.projectId ===
+			? removal.find((s) => s.id === activeSessionIdSnap)?.projectId ===
 				projectId
 			: false;
 	const stillReferenced =
-		activeOnProject || index.sessions.some((s) => s.projectId === projectId);
+		activeOnProject || removal.some((s) => s.projectId === projectId);
 	if (!stillReferenced) {
 		await projectStore.delete(projectId).catch((err) => {
 			console.error(
@@ -1040,7 +1102,10 @@ export async function setSessionModel(
 	}
 
 	meta.model = model;
-	await writeIndex(index);
+	await mutateIndex((idx) => {
+		const latest = idx.sessions.find((s) => s.id === sessionId);
+		if (latest) latest.model = model;
+	});
 	notifySessionModelChanged(sessionId, model);
 	return { ok: true };
 }

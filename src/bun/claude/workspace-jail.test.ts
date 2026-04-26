@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -104,6 +104,22 @@ describe("checkToolInput — Write/Edit/NotebookEdit", () => {
 		});
 		expect(result.allowed).toBe(false);
 	});
+
+	it("denies Write through a symlink that points outside the workspace", async () => {
+		const outside = await realpath(
+			await mkdtemp(join(tmpdir(), "ptolomeu-out-")),
+		);
+		try {
+			await symlink(outside, join(ws, "out-link"));
+			const result = checkToolInput(ws, "Write", {
+				file_path: "out-link/created.txt",
+				content: "x",
+			});
+			expect(result.allowed).toBe(false);
+		} finally {
+			await rm(outside, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("checkToolInput — Bash", () => {
@@ -143,6 +159,43 @@ describe("checkToolInput — Bash", () => {
 				command: "echo hi >> /etc/hosts",
 			}).allowed,
 		).toBe(false);
+	});
+
+	it("denies mutating commands with relative traversal targets", () => {
+		for (const command of ["touch ../escape", "echo hi > ../escape"]) {
+			const r = checkToolInput(ws, "Bash", { command });
+			expect(r.allowed, command).toBe(false);
+		}
+	});
+
+	it("denies write commands after cd escapes the workspace", () => {
+		const r = checkToolInput(ws, "Bash", {
+			command: "cd .. && touch escaped.txt",
+		});
+		expect(r.allowed).toBe(false);
+	});
+
+	it("allows write commands after cd into a workspace subdirectory", async () => {
+		await mkdir(join(ws, "sub"));
+		const r = checkToolInput(ws, "Bash", {
+			command: "cd sub && touch ok.txt",
+		});
+		expect(r.allowed).toBe(true);
+	});
+
+	it("denies writes through symlinked directories", async () => {
+		const outside = await realpath(
+			await mkdtemp(join(tmpdir(), "ptolomeu-out-")),
+		);
+		try {
+			await symlink(outside, join(ws, "out-link"));
+			const r = checkToolInput(ws, "Bash", {
+				command: "touch out-link/created.txt",
+			});
+			expect(r.allowed).toBe(false);
+		} finally {
+			await rm(outside, { recursive: true, force: true });
+		}
 	});
 
 	it("denies rm/mv/cp/touch/mkdir/chmod targeting absolute paths outside workspace", () => {

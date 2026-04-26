@@ -28,6 +28,7 @@ export type DecisionSource =
 	| "auto-cancelled";
 
 export interface PermissionRequestInput {
+	sessionId: string;
 	toolCallId: string;
 	toolName: string;
 	args: Record<string, unknown>;
@@ -43,6 +44,7 @@ export interface PermissionRequest extends PermissionRequestInput {
 }
 
 export interface DecisionRecord {
+	sessionId: string;
 	permissionId: string;
 	toolCallId: string;
 	toolName: string;
@@ -80,7 +82,7 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 
 function whitelistKey(toolName: string, args: Record<string, unknown>): string {
 	// Keyed by name + canonical JSON of args: exact-match, not tool-level.
-	// Stability across runs is not required — the whitelist is session-scoped.
+	// Stability across runs is not required.
 	try {
 		return `${toolName}::${JSON.stringify(args)}`;
 	} catch {
@@ -94,7 +96,7 @@ function whitelistKey(toolName: string, args: Record<string, unknown>): string {
 
 export class PermissionGate {
 	private readonly pending = new Map<string, PendingEntry>();
-	private readonly whitelist = new Set<string>();
+	private readonly whitelist = new Map<string, Set<string>>();
 	private readonly timeoutMs: number;
 	private readonly generateId: () => string;
 	private readonly now: () => number;
@@ -137,7 +139,9 @@ export class PermissionGate {
 		// user previously granted always-allow — they always prompt.
 		if (
 			!risk.bypassWhitelist &&
-			this.whitelist.has(whitelistKey(input.toolName, input.args))
+			this.whitelist
+				.get(input.sessionId)
+				?.has(whitelistKey(input.toolName, input.args))
 		) {
 			const decision: PermissionDecision = { behavior: "allow" };
 			this.emitDecision({
@@ -197,9 +201,11 @@ export class PermissionGate {
 			behavior === "always-allow-this-session" &&
 			!entry.request.risk.bypassWhitelist
 		) {
-			this.whitelist.add(
-				whitelistKey(entry.request.toolName, entry.request.args),
-			);
+			const key = whitelistKey(entry.request.toolName, entry.request.args);
+			const sessionWhitelist =
+				this.whitelist.get(entry.request.sessionId) ?? new Set<string>();
+			sessionWhitelist.add(key);
+			this.whitelist.set(entry.request.sessionId, sessionWhitelist);
 		}
 
 		this.emitDecision({
@@ -253,8 +259,12 @@ export class PermissionGate {
 	/**
 	 * Cancel every pending request. Returns the number of requests cancelled.
 	 */
-	cancelAll(reason?: string): number {
-		const ids = [...this.pending.keys()];
+	cancelAll(reason?: string, sessionId?: string): number {
+		const ids = [...this.pending.entries()]
+			.filter(
+				([, entry]) => !sessionId || entry.request.sessionId === sessionId,
+			)
+			.map(([id]) => id);
 		for (const id of ids) this.cancel(id, reason);
 		return ids.length;
 	}
@@ -267,7 +277,11 @@ export class PermissionGate {
 	}
 
 	/** Clear the session whitelist (e.g. on session close). */
-	clearWhitelist(): void {
+	clearWhitelist(sessionId?: string): void {
+		if (sessionId) {
+			this.whitelist.delete(sessionId);
+			return;
+		}
 		this.whitelist.clear();
 	}
 
@@ -276,7 +290,9 @@ export class PermissionGate {
 	}
 
 	get whitelistSize(): number {
-		return this.whitelist.size;
+		let size = 0;
+		for (const entries of this.whitelist.values()) size += entries.size;
+		return size;
 	}
 
 	private take(permissionId: string): PendingEntry | null {
@@ -295,6 +311,7 @@ export class PermissionGate {
 		if (!this.onDecision) return;
 		const { request, decision, source } = params;
 		this.onDecision({
+			sessionId: request.sessionId,
 			permissionId: request.permissionId,
 			toolCallId: request.toolCallId,
 			toolName: request.toolName,

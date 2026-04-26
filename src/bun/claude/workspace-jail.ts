@@ -10,9 +10,9 @@
  * fora do workspace".
  */
 
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, resolve, sep } from "node:path";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
 
 export type JailResult = { allowed: true } | { allowed: false; reason: string };
 
@@ -37,8 +37,38 @@ export function isInsideWorkspace(
 	// `resolve` normalizes `..` against the workspace when candidate is
 	// relative, or keeps the absolute form as-is.
 	const resolved = resolve(canonicalWs, candidate);
+	if (!isResolvedInsideWorkspace(canonicalWs, resolved)) return false;
+	return existingAncestorStaysInside(canonicalWs, resolved);
+}
+
+function isResolvedInsideWorkspace(
+	canonicalWs: string,
+	resolved: string,
+): boolean {
 	if (resolved === canonicalWs) return true;
 	return resolved.startsWith(canonicalWs + sep);
+}
+
+function existingAncestorStaysInside(
+	canonicalWs: string,
+	resolved: string,
+): boolean {
+	let cursor = resolved;
+	while (!existsSync(cursor)) {
+		const parent = dirname(cursor);
+		if (parent === cursor) return false;
+		cursor = parent;
+	}
+	try {
+		const real = realpathSync(cursor);
+		return isResolvedInsideWorkspace(canonicalWs, real);
+	} catch {
+		return false;
+	}
+}
+
+function isPathSafeForWrite(workspace: string, candidate: string): boolean {
+	return isInsideWorkspace(workspace, candidate);
 }
 
 // Patterns that indicate the command is creating/mutating a file or
@@ -74,6 +104,23 @@ const BASH_WRITE_PATTERNS: RegExp[] = [
 	// token (`echo x>>/tmp/out`) by making the preceding boundary optional.
 	/(?:\d+|&)?>>?\|?\s*[^&\s]/,
 ];
+
+const PATH_ARG_COMMANDS = new Set([
+	"rm",
+	"mv",
+	"cp",
+	"touch",
+	"mkdir",
+	"rmdir",
+	"chmod",
+	"chown",
+	"ln",
+	"truncate",
+	"tee",
+	"sed",
+	"awk",
+	"dd",
+]);
 
 function isBashWrite(command: string): boolean {
 	return BASH_WRITE_PATTERNS.some((re) => re.test(command));
@@ -113,6 +160,77 @@ function extractReferencedPaths(command: string): string[] {
 	return paths;
 }
 
+function stripQuotes(token: string): string {
+	if (
+		(token.startsWith("'") && token.endsWith("'")) ||
+		(token.startsWith('"') && token.endsWith('"'))
+	) {
+		return token.slice(1, -1);
+	}
+	return token;
+}
+
+function tokenizeShellish(command: string): string[] {
+	return [...command.matchAll(/"[^"]*"|'[^']*'|[;&|()<>]+|[^\s;&|()<>]+/g)].map(
+		(match) => stripQuotes(match[0]),
+	);
+}
+
+function looksPathLike(token: string): boolean {
+	return (
+		token.startsWith("/") ||
+		token.startsWith("./") ||
+		token.startsWith("../") ||
+		token.startsWith("~/") ||
+		token.includes("/")
+	);
+}
+
+function extractRedirectTargets(command: string): string[] {
+	const targets: string[] = [];
+	const matches = command.matchAll(
+		/(?:^|[^\d])(?:\d+|&)?>>?\|?\s*("[^"]*"|'[^']*'|[^&\s;|()]+)/g,
+	);
+	for (const match of matches) targets.push(stripQuotes(match[1]));
+	return targets;
+}
+
+function extractCdTargets(command: string): string[] {
+	const targets: string[] = [];
+	const matches = command.matchAll(
+		/(?:^|[;&|]\s*)cd\s+("[^"]*"|'[^']*'|[^&\s;|()]+)/g,
+	);
+	for (const match of matches) targets.push(stripQuotes(match[1]));
+	return targets;
+}
+
+function extractRelativeWriteTargets(command: string): string[] {
+	const tokens = tokenizeShellish(command);
+	const paths: string[] = [];
+	for (let i = 0; i < tokens.length; i++) {
+		const token = tokens[i];
+		if (token.includes("=")) {
+			const [key, value] = token.split(/=(.*)/s);
+			if (key === "of" && value && looksPathLike(value)) paths.push(value);
+			continue;
+		}
+		const commandName = token.split("/").pop() ?? token;
+		if (!PATH_ARG_COMMANDS.has(commandName)) continue;
+		for (let j = i + 1; j < tokens.length; j++) {
+			const candidate = tokens[j];
+			if (/^[;&|()<>]+$/.test(candidate)) break;
+			if (candidate.startsWith("-")) continue;
+			if (candidate.includes("=")) {
+				const [key, value] = candidate.split(/=(.*)/s);
+				if (key === "of" && value && looksPathLike(value)) paths.push(value);
+				continue;
+			}
+			if (looksPathLike(candidate)) paths.push(candidate);
+		}
+	}
+	return paths;
+}
+
 function toolRequiresPath(
 	toolName: string,
 ): "file_path" | "notebook_path" | null {
@@ -140,7 +258,7 @@ export function checkToolInput(
 		if (!isAbsolute(raw)) {
 			// Relative paths are resolved against cwd (workspace) by the SDK,
 			// so they are contained by construction. Re-check defensively.
-			if (!isInsideWorkspace(workspace, raw)) {
+			if (!isPathSafeForWrite(workspace, raw)) {
 				return {
 					allowed: false,
 					reason: `Caminho "${raw}" escapa do workspace ${workspace}.`,
@@ -148,7 +266,7 @@ export function checkToolInput(
 			}
 			return { allowed: true };
 		}
-		if (!isInsideWorkspace(workspace, raw)) {
+		if (!isPathSafeForWrite(workspace, raw)) {
 			return {
 				allowed: false,
 				reason: `Caminho "${raw}" está fora do workspace ${workspace}. Use caminhos relativos ou dentro de ${workspace}.`,
@@ -164,8 +282,21 @@ export function checkToolInput(
 		}
 		const command = expandTilde(raw);
 		if (!isBashWrite(command)) return { allowed: true };
-		for (const p of extractReferencedPaths(command)) {
-			if (!isInsideWorkspace(workspace, p)) {
+		for (const p of extractCdTargets(command)) {
+			if (!isPathSafeForWrite(workspace, p)) {
+				return {
+					allowed: false,
+					reason: `Comando muda para "${p}" fora do workspace ${workspace} antes de alterar arquivos.`,
+				};
+			}
+		}
+		const paths = [
+			...extractReferencedPaths(command),
+			...extractRedirectTargets(command),
+			...extractRelativeWriteTargets(command),
+		];
+		for (const p of paths) {
+			if (!isPathSafeForWrite(workspace, p)) {
 				return {
 					allowed: false,
 					reason: `Comando toca "${p}" fora do workspace ${workspace}. Mantenha criações/alterações dentro do workspace.`,

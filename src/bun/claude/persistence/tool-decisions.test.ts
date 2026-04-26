@@ -7,6 +7,7 @@ import { ToolDecisionStore } from "./tool-decisions";
 
 function makeRecord(overrides: Partial<DecisionRecord> = {}): DecisionRecord {
 	return {
+		sessionId: "s1",
 		permissionId: "perm_1",
 		toolCallId: "t1",
 		toolName: "Bash",
@@ -38,6 +39,7 @@ describe("ToolDecisionStore", () => {
 		expect(stored).toHaveLength(1);
 		expect(stored[0]).toMatchObject({
 			version: 1,
+			sessionId: "s1",
 			permissionId: "perm_1",
 			toolName: "Bash",
 			source: "user-approved",
@@ -84,8 +86,9 @@ describe("ToolDecisionStore", () => {
 
 	it("isolates decisions across sessions", async () => {
 		await store.append("s1", makeRecord({ toolName: "Bash" }));
-		await store.append("s2", makeRecord({ toolName: "Read" }));
+		await store.append("s2", makeRecord({ sessionId: "s2", toolName: "Read" }));
 		expect((await store.read("s1"))[0].toolName).toBe("Bash");
 		expect((await store.read("s2"))[0].toolName).toBe("Read");
+		expect((await store.read("s2"))[0].sessionId).toBe("s2");
 	});
 });

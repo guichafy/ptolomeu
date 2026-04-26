@@ -9,10 +9,11 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { McpStdioServerConfig } from "@anthropic-ai/claude-agent-sdk";
+import { backupCorruptJson, writeJsonAtomic } from "../atomic-json";
 
 export interface StoredMcpServer {
 	name: string;
@@ -93,14 +94,14 @@ export class McpLoader {
 		try {
 			return validate(JSON.parse(await readFile(this.path, "utf8")));
 		} catch {
+			await backupCorruptJson(this.path);
 			return defaultFile();
 		}
 	}
 
 	async save(file: McpServersFile): Promise<void> {
 		const clean = validate(file);
-		await mkdir(dirname(this.path), { recursive: true });
-		await writeFile(this.path, JSON.stringify(clean, null, 2));
+		await writeJsonAtomic(this.path, clean);
 	}
 
 	/**
