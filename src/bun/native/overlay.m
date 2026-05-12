@@ -6,23 +6,47 @@
 @property (nonatomic, weak) id originalDelegate;
 @end
 
+// Callback invoked from native back into bun whenever the overlay window
+// becomes key (firstResponder ready). Bun registers this via
+// `setWindowShowCallback` — the mainview uses it to focus the search input
+// and refresh the Claude session list without depending on webview-side
+// visibility events.
+typedef void (*WindowShowCallback)(void);
+static WindowShowCallback windowShowCallback = NULL;
+
 @implementation OverlayWindowDelegate
 
 - (BOOL)windowShouldClose:(NSWindow *)sender {
     // Hide the window instead of closing
+    [sender makeFirstResponder:nil];
     [sender orderOut:nil];
     return NO;
 }
 
 - (void)windowDidResignKey:(NSNotification *)notification {
     NSWindow *window = notification.object;
+    NSLog(@"[Delegate] windowDidResignKey. before isVisible=%d alpha=%.2f firstResp=%@", [window isVisible], [window alphaValue], NSStringFromClass([[window firstResponder] class]));
+    [window makeFirstResponder:nil];
+    [window setAlphaValue:0.0];
     [window orderOut:nil];
+    NSLog(@"[Delegate] windowDidResignKey. after  isVisible=%d alpha=%.2f", [window isVisible], [window alphaValue]);
+}
+
+- (void)windowDidBecomeKey:(NSNotification *)notification {
+    NSLog(@"[Delegate] windowDidBecomeKey");
+    if (windowShowCallback) {
+        windowShowCallback();
+    }
+    if ([self.originalDelegate respondsToSelector:@selector(windowDidBecomeKey:)]) {
+        [self.originalDelegate windowDidBecomeKey:notification];
+    }
 }
 
 // Forward any other delegate methods to the original delegate
 - (BOOL)respondsToSelector:(SEL)aSelector {
     if (aSelector == @selector(windowShouldClose:)) return YES;
     if (aSelector == @selector(windowDidResignKey:)) return YES;
+    if (aSelector == @selector(windowDidBecomeKey:)) return YES;
     if (self.originalDelegate && [self.originalDelegate respondsToSelector:aSelector]) return YES;
     return [super respondsToSelector:aSelector];
 }
@@ -41,12 +65,13 @@ static NSWindow *registeredWindow = nil;
 static EventHotKeyRef hotKeyRef = NULL;
 static EventHandlerRef hotKeyHandlerRef = NULL;
 
-// Callback invoked from native back into bun whenever the overlay window
-// transitions from hidden to visible (hotkey-triggered show). Bun registers
-// this via `setWindowShowCallback` — the mainview uses it to refresh the
-// Claude session list without depending on webview-side visibility events.
-typedef void (*WindowShowCallback)(void);
-static WindowShowCallback windowShowCallback = NULL;
+// Carbon hotkeys can multi-fire under certain WKWebView + window-level
+// configurations — observed in production as 10+ fires within ~50ms for a
+// single physical keypress, sending the window into a show/hide pingpong.
+// 200ms is below typical human double-tap (~300ms) but well above any
+// observed repeat burst.
+static const NSTimeInterval HOTKEY_DEBOUNCE_S = 0.20;
+static NSTimeInterval lastHotkeyAt = 0;
 
 // Forward declaration
 void makeWindowOverlay(void *nsWindowPtr);
@@ -55,16 +80,38 @@ static OSStatus hotkeyHandler(EventHandlerCallRef nextHandler, EventRef event, v
     (void)nextHandler;
     (void)event;
     (void)userData;
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    NSTimeInterval elapsed = now - lastHotkeyAt;
+    if (elapsed < HOTKEY_DEBOUNCE_S) {
+        NSLog(@"[Hotkey] debounced (elapsed=%.0fms)", elapsed * 1000);
+        return noErr;
+    }
+    lastHotkeyAt = now;
     if (registeredWindow) {
-        if ([registeredWindow isVisible]) {
+        BOOL visible = [registeredWindow isVisible];
+        BOOL key = [registeredWindow isKeyWindow];
+        NSLog(@"[Hotkey] fired. isVisible=%d isKey=%d", visible, key);
+        if (visible) {
+            NSLog(@"[Hotkey] -> hide path");
             dispatch_async(dispatch_get_main_queue(), ^{
+                NSLog(@"[Hotkey] hide dispatch: before isVisible=%d alpha=%.2f firstResp=%@", [registeredWindow isVisible], [registeredWindow alphaValue], NSStringFromClass([[registeredWindow firstResponder] class]));
+                // Resign first responder before orderOut. When the WKWebView's
+                // <input> is focused with typed content + an active caret, the
+                // WebKit text-input session keeps the compositor layer "live"
+                // — orderOut + alpha=0 alone leave a stale visual on screen.
+                // makeFirstResponder:nil ends the text-input session so the
+                // subsequent orderOut actually removes the visual.
+                [registeredWindow makeFirstResponder:nil];
+                [registeredWindow setAlphaValue:0.0];
                 [registeredWindow orderOut:nil];
+                NSLog(@"[Hotkey] hide dispatch: after  isVisible=%d alpha=%.2f", [registeredWindow isVisible], [registeredWindow alphaValue]);
             });
         } else {
+            NSLog(@"[Hotkey] -> show path");
+            // windowShowCallback is invoked from windowDidBecomeKey: in the
+            // delegate, after the WKWebView is firstResponder — the only
+            // point where DOM .focus() in the renderer actually takes effect.
             makeWindowOverlay((__bridge void *)registeredWindow);
-            if (windowShowCallback) {
-                windowShowCallback();
-            }
         }
     }
     return noErr;
@@ -114,8 +161,20 @@ void makeWindowOverlay(void *nsWindowPtr) {
             [window setFrameOrigin:NSMakePoint(x, y)];
         }
 
-        [window orderFrontRegardless];
+        // makeKeyAndOrderFront: (not orderFrontRegardless) is required: in
+        // the hotkey-hide → hotkey-show path the app stays `active` the whole
+        // time, so [NSApp activateIgnoringOtherApps:] is a no-op and
+        // orderFrontRegardless leaves the window visible-but-not-key.
+        // setAlphaValue restores visibility after the hide path zeroed it
+        // out — a defense against the WKWebView/StatusWindowLevel quirk
+        // where orderOut leaves a stale visual on screen until the next
+        // event drains the run loop.
+        [window setAlphaValue:1.0];
         [NSApp activateIgnoringOtherApps:YES];
+        [window makeKeyAndOrderFront:nil];
+        // windowShowCallback fires from windowDidBecomeKey: in the delegate —
+        // the only point where the WKWebView is firstResponder and DOM
+        // .focus() actually takes effect.
     });
 }
 
@@ -149,6 +208,11 @@ int registerHotkey(void *nsWindowPtr) {
         NSLog(@"[Hotkey] Failed to register hotkey: %d", (int)status);
     }
     return (int)status;
+}
+
+int isMainWindowVisible(void) {
+    if (!registeredWindow) return 0;
+    return [registeredWindow isVisible] ? 1 : 0;
 }
 
 void unregisterHotkey(void) {

@@ -10,6 +10,7 @@ import {
 	SearchTypeCombobox,
 	type SearchTypeComboboxHandle,
 } from "./components/search-type-combobox";
+import { useWindowShown } from "./hooks/use-window-shown";
 import { sessionToResult } from "./providers/claude-provider";
 import { GitHubProvider, useGitHub } from "./providers/github-context";
 import {
@@ -182,25 +183,15 @@ function PaletteContent() {
 		};
 	}, [activeProvider.id, query]);
 
-	// Fallback refresh on webview visibility/focus events. These are not
-	// guaranteed to fire reliably after the chat window has been shown, but
-	// when they do, they provide a redundant refresh path. The handleSearch
-	// catch/empty-result paths are protected by `preserveOnEmpty`, so a
-	// failed RPC here cannot clobber a populated list set by the push above.
-	useEffect(() => {
-		const onVisible = () => {
-			if (document.hidden) return;
-			if (activeProvider.id === "claude" && !query.trim()) {
-				handleSearch();
-			}
-		};
-		document.addEventListener("visibilitychange", onVisible);
-		window.addEventListener("focus", onVisible);
-		return () => {
-			document.removeEventListener("visibilitychange", onVisible);
-			window.removeEventListener("focus", onVisible);
-		};
-	}, [activeProvider.id, query, handleSearch]);
+	// Fallback refresh on every window-shown signal. The hook combines the
+	// authoritative bun-side push with DOM focus/visibility events; the
+	// `claudeSessionsUpdate` push above is still the primary path (it carries
+	// the session payload), this is only the no-payload "refresh now" hint.
+	useWindowShown(() => {
+		if (activeProvider.id === "claude" && !query.trim()) {
+			handleSearch();
+		}
+	});
 
 	const prevSubTypeRef = useRef(activeSubType);
 	useEffect(() => {

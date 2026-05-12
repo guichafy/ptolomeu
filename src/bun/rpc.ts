@@ -211,6 +211,7 @@ export interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			openPreferences: { section?: SettingsSection };
 			claudeOpenSession: { sessionId: string };
 			claudeSessionsUpdate: { sessions: SessionMeta[] };
+			windowShown: { at: number };
 			agentEvent: { sessionId: string; event: AgentEvent };
 		};
 	};
@@ -245,6 +246,16 @@ export function setMainWindow(win: {
 	setFrame: (x: number, y: number, w: number, h: number) => void;
 }) {
 	mainWindowRef = win;
+}
+
+// Late-bound visibility check, wired from index.ts via the native FFI.
+// Used to ignore resizeWindow calls that arrive after the window has been
+// orderOut'd — Electrobun's setFrame applied to a hidden window can re-show
+// it, producing a "flicker + reopen" behavior when fast typing races a
+// hotkey-hide.
+let mainWindowVisibilityChecker: (() => boolean) | null = null;
+export function setMainWindowVisibilityChecker(fn: () => boolean) {
+	mainWindowVisibilityChecker = fn;
 }
 
 let cachedApps: { name: string; path: string }[] | null = null;
@@ -426,16 +437,27 @@ export const requestHandlers: BunRequestHandlers = {
 		return { icon };
 	},
 	resizeWindow: async ({ height, width }) => {
-		if (mainWindowRef) {
-			const frame = mainWindowRef.getFrame();
-			const nextWidth = width ?? 630;
-			if (frame.height === height && frame.width === nextWidth) return true;
-			const newY = frame.y + (frame.height - height) / 2;
-			const newX = frame.x + (frame.width - nextWidth) / 2;
-			mainWindowRef.setFrame(newX, newY, nextWidth, height);
+		if (!mainWindowRef) return false;
+		const frame = mainWindowRef.getFrame();
+		const nextWidth = width ?? 630;
+		// Idempotent no-op check first so StrictMode's double-fired effects
+		// at startup (and any other duplicate calls) stay silent.
+		if (frame.height === height && frame.width === nextWidth) return true;
+		// Skip when the native window is hidden. Electrobun's setFrame on a
+		// hidden NSWindow can implicitly reorder it back on-screen, which
+		// races against orderOut from a recent hotkey-hide and produces a
+		// "flicker, reopen on click-outside" loop documented in production.
+		if (mainWindowVisibilityChecker && !mainWindowVisibilityChecker()) {
+			console.log("[main] resizeWindow skipped (window hidden)");
 			return true;
 		}
-		return false;
+		const newY = frame.y + (frame.height - height) / 2;
+		const newX = frame.x + (frame.width - nextWidth) / 2;
+		console.log(
+			`[main] resizeWindow: ${frame.width}x${frame.height} -> ${nextWidth}x${height}`,
+		);
+		mainWindowRef.setFrame(newX, newY, nextWidth, height);
+		return true;
 	},
 	loadSettings: async () => {
 		return loadSettingsFromDisk();
