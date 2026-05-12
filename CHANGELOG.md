@@ -1,3 +1,10 @@
+## [0.10.3](https://github.com/guichafy/ptolomeu/compare/v0.10.2...v0.10.3) (2026-05-12)
+
+
+### Bug Fixes
+
+* **palette:** harden ⌘⇧Space show/hide against WebKit edge cases ([742b1b1](https://github.com/guichafy/ptolomeu/commit/742b1b1bc6c598bab8517b971c6344ea4979c030))
+
 ## [0.10.2](https://github.com/guichafy/ptolomeu/compare/v0.10.1...v0.10.2) (2026-04-26)
 
 
