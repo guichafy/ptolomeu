@@ -354,6 +354,7 @@ interface PtolomeuRPCSchema extends ElectrobunRPCSchema {
 			claudeStreamError: { sessionId: string; error: string };
 			claudeOpenSession: { sessionId: string };
 			claudeSessionsUpdate: { sessions: SessionMeta[] };
+			windowShown: { at: number };
 			agentEvent: { sessionId: string; event: AgentEvent };
 		};
 	};
@@ -378,6 +379,17 @@ export function onAgentEvent(listener: AgentEventListener): () => void {
 	agentEventListeners.add(listener);
 	return () => {
 		agentEventListeners.delete(listener);
+	};
+}
+
+type WindowShownListener = () => void;
+
+const windowShownListeners = new Set<WindowShownListener>();
+
+export function onWindowShown(listener: WindowShownListener): () => void {
+	windowShownListeners.add(listener);
+	return () => {
+		windowShownListeners.delete(listener);
 	};
 }
 
@@ -419,6 +431,15 @@ const rpcInstance = Electroview.defineRPC<PtolomeuRPCSchema>({
 					claudeSessionsUpdateHandler(args);
 				} else {
 					pendingClaudeSessionsUpdate = args;
+				}
+			},
+			windowShown: () => {
+				for (const listener of windowShownListeners) {
+					try {
+						listener();
+					} catch (err) {
+						console.error("[mainview:rpc] windowShown listener threw:", err);
+					}
 				}
 			},
 			agentEvent: (args) => {

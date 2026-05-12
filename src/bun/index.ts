@@ -4,7 +4,13 @@ import { ApplicationMenu, BrowserWindow, Tray, Utils } from "electrobun/bun";
 import { initAnalytics, shutdownAnalytics, trackEvent } from "./analytics";
 import { listSessions as claudeListSessions } from "./claude/session-manager";
 import { initProxy } from "./net/proxy";
-import { chatRpc, mainRpc, setMainWindow, setOpenChatCallback } from "./rpc";
+import {
+	chatRpc,
+	mainRpc,
+	setMainWindow,
+	setMainWindowVisibilityChecker,
+	setOpenChatCallback,
+} from "./rpc";
 import { loadSettings } from "./settings";
 
 // Carrega settings antes de qualquer fetch para que o modo de proxy escolhido
@@ -42,6 +48,10 @@ const overlaySymbols = {
 	setTrayLength: {
 		args: [FFIType.ptr, FFIType.f64],
 		returns: FFIType.void,
+	},
+	isMainWindowVisible: {
+		args: [],
+		returns: FFIType.i32,
 	},
 } as const;
 
@@ -177,6 +187,9 @@ const mainWindow = new BrowserWindow({
 });
 
 setMainWindow(mainWindow);
+setMainWindowVisibilityChecker(
+	() => overlayLib.symbols.isMainWindowVisible() !== 0,
+);
 setOpenChatCallback((sessionId) => openChatWindow(sessionId));
 
 // Push Claude session list to the palette whenever the main window gains
@@ -211,7 +224,6 @@ async function pushClaudeSessions(reason: string): Promise<void> {
 }
 
 mainWindow.on("focus", () => {
-	console.log("[main] mainWindow focus event fired");
 	pushClaudeSessions("mainWindow.focus");
 });
 
@@ -288,14 +300,14 @@ tray.setMenu(
 			],
 );
 
-// Native-side notification for when the hotkey transitions the window from
-// hidden to visible. The Electrobun `focus` event should cover this too, but
-// the custom NSWindowDelegate installed in overlay.m forwards delegate
-// callbacks via message forwarding, which has proven unreliable in practice.
-// This direct callback bypasses the delegate chain entirely.
+// Native-side notification fired from windowDidBecomeKey: in overlay.m —
+// the only point where the WKWebView is firstResponder. The renderer's
+// `useWindowShown` hook subscribes to the resulting `windowShown` push and
+// (re)focuses the search input. We also refresh the Claude session list
+// here because the same moment is when the palette is ready to show data.
 const windowShowCallback = new JSCallback(
 	() => {
-		console.log("[main] native windowShow callback fired");
+		mainRpc.send.windowShown({ at: Date.now() });
 		pushClaudeSessions("native.windowShow");
 	},
 	{
